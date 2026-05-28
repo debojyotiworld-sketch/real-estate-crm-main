@@ -60,6 +60,8 @@ interface Props {
     onOpenChange: (
         open: boolean
     ) => void;
+
+    employee?: any;
 }
 
 const initialState = {
