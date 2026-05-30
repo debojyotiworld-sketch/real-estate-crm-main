@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { usePayroll } from "@/hooks/hr/usePayroll";
 import { useEmployees } from "@/hooks/hr/useEmployees";
-import { CheckCircle, Download, Loader2, Edit, Zap, IndianRupee, PieChart, Banknote } from "lucide-react";
+import { CheckCircle, Download, Loader2, Edit, Zap, IndianRupee, PieChart, Banknote, ChevronLeft, ChevronRight } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,10 +15,10 @@ export const PayrollTab = () => {
     const { payrolls, loading, fetchPayrolls, generateBulkPayroll, updatePayroll, approvePayroll } = usePayroll();
     const { employees } = useEmployees();
     
-    const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1));
-    const [year, setYear] = useState<string>(String(new Date().getFullYear()));
+    const currentDate = new Date();
+    const [month, setMonth] = useState<string>(String(currentDate.getMonth() + 1));
+    const [year, setYear] = useState<string>(String(currentDate.getFullYear()));
     
-    // Inline Edit State
     const [editModal, setEditModal] = useState(false);
     const [selectedPayroll, setSelectedPayroll] = useState<any>(null);
     const [adjustments, setAdjustments] = useState({ leave_deduction: 0, net_salary: 0 });
@@ -27,7 +27,34 @@ export const PayrollTab = () => {
         fetchPayrolls(undefined, Number(month), Number(year)); 
     }, [month, year, fetchPayrolls]);
 
-    // Metrics Calculation
+    const monthsList = [
+        { value: "1", label: "January" }, { value: "2", label: "February" }, { value: "3", label: "March" },
+        { value: "4", label: "April" }, { value: "5", label: "May" }, { value: "6", label: "June" },
+        { value: "7", label: "July" }, { value: "8", label: "August" }, { value: "9", label: "September" },
+        { value: "10", label: "October" }, { value: "11", label: "November" }, { value: "12", label: "December" },
+    ];
+
+    const yearsList = useMemo(() => {
+        const currentY = new Date().getFullYear();
+        return Array.from({ length: 5 }, (_, i) => String(currentY - i));
+    }, []);
+
+    const handlePrevMonth = () => {
+        let m = parseInt(month);
+        let y = parseInt(year);
+        if (m === 1) { m = 12; y -= 1; } else { m -= 1; }
+        setMonth(String(m));
+        setYear(String(y));
+    };
+
+    const handleNextMonth = () => {
+        let m = parseInt(month);
+        let y = parseInt(year);
+        if (m === 12) { m = 1; y += 1; } else { m += 1; }
+        setMonth(String(m));
+        setYear(String(y));
+    };
+
     const metrics = useMemo(() => {
         let totalNet = 0; let totalDeduct = 0; let pending = 0;
         payrolls.forEach((p: any) => {
@@ -40,7 +67,7 @@ export const PayrollTab = () => {
 
     const handleBulkRun = async () => {
         const activeEmps = employees.filter((e: any) => e.status === 'active');
-        if (window.confirm(`Are you sure you want to run calculations for ${activeEmps.length} active employees for ${month}/${year}?`)) {
+        if (window.confirm(`Are you sure you want to run calculations for ${activeEmps.length} active employees for ${monthsList.find(m => m.value === month)?.label} ${year}?`)) {
             await generateBulkPayroll(activeEmps, Number(month), Number(year));
         }
     };
@@ -60,46 +87,45 @@ export const PayrollTab = () => {
     };
 
     const handleDownload = (payroll: any) => {
-        window.print(); // In reality, hook this to a PDF Generator
+        window.print();
     };
 
     return (
         <div className="space-y-6">
-            {/* Top Controls & Metrics */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl border shadow-sm">
-                <div className="flex items-center gap-3">
-                    <Select value={month} onValueChange={setMonth}>
-                        <SelectTrigger className="w-[140px] bg-slate-50"><SelectValue /></SelectTrigger>
-                        <SelectContent>{[1,2,3,4,5,6,7,8,9,10,11,12].map(m => <SelectItem key={m} value={String(m)}>Month {m}</SelectItem>)}</SelectContent>
-                    </Select>
-                    <Select value={year} onValueChange={setYear}>
-                        <SelectTrigger className="w-[100px] bg-slate-50"><SelectValue /></SelectTrigger>
-                        <SelectContent>{["2024","2025","2026","2027"].map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent>
-                    </Select>
+            
+            {/* Dashboard Cards - FULL WIDTH */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full">
+                <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4">
+                    <div className="p-3 bg-blue-50 rounded-lg text-blue-600"><Banknote className="h-5 w-5"/></div>
+                    <div><p className="text-[10px] font-bold text-muted-foreground uppercase">Total Company CTC</p><h3 className="text-xl font-bold">₹{metrics.totalCTC.toLocaleString()}</h3></div>
+                </CardContent></Card>
+                <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4">
+                    <div className="p-3 bg-red-50 rounded-lg text-red-600"><PieChart className="h-5 w-5"/></div>
+                    <div><p className="text-[10px] font-bold text-muted-foreground uppercase">Total Deductions</p><h3 className="text-xl font-bold text-red-600">₹{metrics.totalDeduct.toLocaleString()}</h3></div>
+                </CardContent></Card>
+                <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4">
+                    <div className="p-3 bg-emerald-50 rounded-lg text-emerald-600"><IndianRupee className="h-5 w-5"/></div>
+                    <div><p className="text-[10px] font-bold text-muted-foreground uppercase">Total Net Payout</p><h3 className="text-xl font-bold text-emerald-600">₹{metrics.totalNet.toLocaleString()}</h3></div>
+                </CardContent></Card>
+                <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4">
+                    <div className="p-3 bg-amber-50 rounded-lg text-amber-600"><CheckCircle className="h-5 w-5"/></div>
+                    <div><p className="text-[10px] font-bold text-muted-foreground uppercase">Pending Approvals</p><h3 className="text-xl font-bold">{metrics.pending} / {metrics.processed}</h3></div>
+                </CardContent></Card>
+            </div>
+
+            {/* Top Controls */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex items-center bg-white p-1.5 rounded-xl border shadow-sm">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-slate-900" onClick={handlePrevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+                    <div className="flex items-center gap-2 px-2">
+                        <Select value={month} onValueChange={setMonth}><SelectTrigger className="w-[130px] h-8 border-none shadow-none font-medium text-slate-700 bg-slate-50/50"><SelectValue /></SelectTrigger><SelectContent>{monthsList.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent></Select>
+                        <Select value={year} onValueChange={setYear}><SelectTrigger className="w-[85px] h-8 border-none shadow-none font-medium text-slate-700 bg-slate-50/50"><SelectValue /></SelectTrigger><SelectContent>{yearsList.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent></Select>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-slate-900" onClick={handleNextMonth}><ChevronRight className="h-4 w-4" /></Button>
                 </div>
                 <Button onClick={handleBulkRun} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-md">
                     <Zap className="h-4 w-4 mr-2" /> Run Company Payroll
                 </Button>
-            </div>
-
-            {/* Dashboard Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4">
-                    <div className="p-3 bg-blue-50 rounded-lg text-blue-600"><Banknote className="h-5 w-5"/></div>
-                    <div><p className="text-xs font-bold text-muted-foreground uppercase">Total Company CTC</p><h3 className="text-xl font-bold">₹{metrics.totalCTC.toLocaleString()}</h3></div>
-                </CardContent></Card>
-                <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4">
-                    <div className="p-3 bg-red-50 rounded-lg text-red-600"><PieChart className="h-5 w-5"/></div>
-                    <div><p className="text-xs font-bold text-muted-foreground uppercase">Total Deductions</p><h3 className="text-xl font-bold text-red-600">₹{metrics.totalDeduct.toLocaleString()}</h3></div>
-                </CardContent></Card>
-                <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4">
-                    <div className="p-3 bg-emerald-50 rounded-lg text-emerald-600"><IndianRupee className="h-5 w-5"/></div>
-                    <div><p className="text-xs font-bold text-muted-foreground uppercase">Total Net Payout</p><h3 className="text-xl font-bold text-emerald-600">₹{metrics.totalNet.toLocaleString()}</h3></div>
-                </CardContent></Card>
-                <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4">
-                    <div className="p-3 bg-amber-50 rounded-lg text-amber-600"><CheckCircle className="h-5 w-5"/></div>
-                    <div><p className="text-xs font-bold text-muted-foreground uppercase">Pending Approvals</p><h3 className="text-xl font-bold">{metrics.pending} / {metrics.processed}</h3></div>
-                </CardContent></Card>
             </div>
 
             {/* Data Table */}
@@ -118,7 +144,7 @@ export const PayrollTab = () => {
                         </TableHeader>
                         <TableBody>
                             {loading ? <TableRow><TableCell colSpan={6} className="h-40 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow> :
-                            payrolls.length === 0 ? <TableRow><TableCell colSpan={6} className="h-40 text-center text-muted-foreground">No payroll generated for this period.</TableCell></TableRow> :
+                            payrolls.length === 0 ? <TableRow><TableCell colSpan={6} className="h-40 text-center text-muted-foreground">No payroll generated for {monthsList.find(m => m.value === month)?.label} {year}.</TableCell></TableRow> :
                             payrolls.map((p: any) => (
                                 <TableRow key={p.id} className="hover:bg-slate-50/50 transition-colors">
                                     <TableCell>
@@ -151,7 +177,6 @@ export const PayrollTab = () => {
                 </CardContent>
             </Card>
 
-            {/* Inline Edit Modal */}
             <Dialog open={editModal} onOpenChange={setEditModal}>
                 <DialogContent className="sm:max-w-[400px] rounded-xl overflow-hidden p-0">
                     <DialogHeader className="bg-slate-50 p-6 border-b">
@@ -161,16 +186,11 @@ export const PayrollTab = () => {
                     <div className="space-y-6 p-6">
                         <div className="space-y-2">
                             <Label className="text-slate-700">Leave Penalty Deduction (Waiver)</Label>
-                            <Input 
-                                type="number" 
-                                className="h-10"
-                                value={adjustments.leave_deduction} 
-                                onChange={e => {
-                                    const newLeaveDeduct = Number(e.target.value);
-                                    const diff = selectedPayroll.leave_deduction - newLeaveDeduct; 
-                                    setAdjustments({ leave_deduction: newLeaveDeduct, net_salary: selectedPayroll.net_salary + diff });
-                                }} 
-                            />
+                            <Input type="number" className="h-10" value={adjustments.leave_deduction} onChange={e => {
+                                const newLeaveDeduct = Number(e.target.value);
+                                const diff = selectedPayroll.leave_deduction - newLeaveDeduct; 
+                                setAdjustments({ leave_deduction: newLeaveDeduct, net_salary: selectedPayroll.net_salary + diff });
+                            }} />
                             <p className="text-xs text-muted-foreground">Reduce this amount to waive off leave penalties.</p>
                         </div>
                         <div className="space-y-2">
@@ -180,7 +200,7 @@ export const PayrollTab = () => {
                     </div>
                     <DialogFooter className="p-4 border-t bg-slate-50">
                         <Button variant="outline" onClick={() => setEditModal(false)}>Cancel</Button>
-                        <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={saveAdjustment}>Update Payroll</Button>
+                        <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={saveAdjustment}>Update Payroll</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

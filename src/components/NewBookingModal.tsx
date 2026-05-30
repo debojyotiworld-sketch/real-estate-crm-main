@@ -3,7 +3,7 @@ import html2pdf from "html2pdf.js";
 import { CalendarDays, CheckCircle2, FileText, IndianRupee, UserRound } from "lucide-react";
 
 import { ProfessionalDialog } from "@/components/common/ProfessionalDialog";
-import InvoiceTemplate, { type InvoiceData } from "@/components/InvoiceTemplate";
+import { InvoiceTemplate } from "@/components/InvoiceTemplate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -692,7 +692,7 @@ export default function NewBookingModal({ open, onClose, onSuccess }: Props) {
       <div className="fixed -left-[9999px] top-0">
         {invoiceData ? (
           <div ref={invoiceRef}>
-            <InvoiceTemplate data={invoiceData} />
+            <InvoiceTemplate booking={invoiceData} currentPayment={null} />
           </div>
         ) : null}
       </div>
@@ -721,3 +721,16 @@ function SummaryRow({
     </div>
   );
 }
+
+type InvoiceData = {
+  customer_name: string;
+  address: string;
+  invoice_no: string;
+  date: string;
+  property_title: string;
+  executive_name: string;
+  token: number;
+  brokerage: number;
+  due: number;
+  total: number;
+};

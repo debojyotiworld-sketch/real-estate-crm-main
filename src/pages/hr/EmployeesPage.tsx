@@ -1,22 +1,11 @@
-import {
-    useState,
-} from "react";
-
+import { useState } from "react";
 import { Tables } from "@/integrations/supabase/types";
 
 type Employee = Tables<"employees">;
 
-import {
-    EmployeeTable,
-} from "@/components/hr/EmployeeTable";
-
-import {
-    EmployeeViewModal,
-} from "@/components/hr/EmployeeViewModal";
-
-import {
-    EmployeePayrollModal,
-} from "@/components/hr/EmployeePayrollModal";
+import { EmployeeTable, } from "@/components/hr/EmployeeTable";
+import { EmployeeViewModal } from "@/components/hr/EmployeeViewModal";
+import { EmployeePayrollModal } from "@/components/hr/EmployeePayrollModal";
 
 export default function EmployeesPage() {
 

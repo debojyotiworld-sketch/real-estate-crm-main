@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, Plus, Eye, IndianRupee, Trash2, Edit, Users, UserCheck, UserMinus, Briefcase, MapPin, CreditCard, Calendar } from "lucide-react";
+import { Search, Plus, Eye, IndianRupee, Trash2, Edit, Users, UserCheck, UserMinus, Briefcase, MapPin, CreditCard } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useEmployees } from "@/hooks/hr/useEmployees";
 import { EmployeeSalaryModal } from "./EmployeeSalaryModal";
@@ -14,7 +14,6 @@ import EmployeeForm from "./EmployeeForm";
 export const EmployeeTable = () => {
     const { employees, loading, search, setSearch, page, setPage, pageSize, totalCount, deleteEmployee } = useEmployees();
     
-    // Modal States
     const [addOpen, setAddOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
     const [viewOpen, setViewOpen] = useState(false);
@@ -25,7 +24,6 @@ export const EmployeeTable = () => {
     const activeCount = employees.filter((e: any) => e.status === "active").length;
     const inactiveCount = employees.length - activeCount;
 
-    // Handlers
     const openAdd = () => { setSelectedEmployee(null); setAddOpen(true); };
     const openEdit = (emp: any) => { setSelectedEmployee(emp); setEditOpen(true); };
     const openView = (emp: any) => { setSelectedEmployee(emp); setViewOpen(true); };
@@ -34,13 +32,13 @@ export const EmployeeTable = () => {
 
     return (
         <div className="space-y-6">
-            {/* SUMMARY CARDS */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* SUMMARY CARDS - FULL WIDTH */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
                 <Card className="border-0 shadow-sm bg-white">
                     <CardContent className="p-6 flex items-center gap-4">
                         <div className="p-3.5 bg-blue-50 rounded-xl text-blue-600"><Users className="h-6 w-6" /></div>
                         <div>
-                            <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Total Headcount</p>
+                            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Total Headcount</p>
                             <h3 className="text-3xl font-bold text-gray-900">{totalCount}</h3>
                         </div>
                     </CardContent>
@@ -49,7 +47,7 @@ export const EmployeeTable = () => {
                     <CardContent className="p-6 flex items-center gap-4">
                         <div className="p-3.5 bg-emerald-50 rounded-xl text-emerald-600"><UserCheck className="h-6 w-6" /></div>
                         <div>
-                            <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Active Staff</p>
+                            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Active Staff</p>
                             <h3 className="text-3xl font-bold text-gray-900">{activeCount}</h3>
                         </div>
                     </CardContent>
@@ -58,7 +56,7 @@ export const EmployeeTable = () => {
                     <CardContent className="p-6 flex items-center gap-4">
                         <div className="p-3.5 bg-rose-50 rounded-xl text-rose-600"><UserMinus className="h-6 w-6" /></div>
                         <div>
-                            <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Inactive / Left</p>
+                            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Inactive / Left</p>
                             <h3 className="text-3xl font-bold text-gray-900">{inactiveCount}</h3>
                         </div>
                     </CardContent>
@@ -139,12 +137,10 @@ export const EmployeeTable = () => {
                 </CardContent>
             </Card>
 
-            {/* MODALS */}
             <EmployeeForm open={addOpen} onOpenChange={setAddOpen} />
             <EmployeeForm open={editOpen} onOpenChange={setEditOpen} employee={selectedEmployee} />
             <EmployeeSalaryModal open={salaryOpen} onOpenChange={setSalaryOpen} employee={selectedEmployee} />
 
-            {/* DEDICATED VIEW PROFILE MODAL */}
             <Dialog open={viewOpen} onOpenChange={setViewOpen}>
                 <DialogContent className="sm:max-w-[700px] overflow-hidden p-0 rounded-xl">
                     <DialogHeader className="p-6 bg-slate-50 border-b">
@@ -158,7 +154,6 @@ export const EmployeeTable = () => {
                     </DialogHeader>
                     {selectedEmployee && (
                         <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
-                            {/* Professional Info */}
                             <div>
                                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><Briefcase className="h-4 w-4"/> Professional Details</h3>
                                 <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-100">
@@ -169,7 +164,6 @@ export const EmployeeTable = () => {
                                 </div>
                             </div>
                             
-                            {/* Contact & KYC */}
                             <div>
                                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><CreditCard className="h-4 w-4"/> Contact & KYC</h3>
                                 <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-100">
@@ -180,7 +174,6 @@ export const EmployeeTable = () => {
                                 </div>
                             </div>
 
-                            {/* Additional Info */}
                             <div>
                                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2"><MapPin className="h-4 w-4"/> Address & Timeline</h3>
                                 <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-100">

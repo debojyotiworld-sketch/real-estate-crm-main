@@ -291,7 +291,7 @@ const Employee = () => {
         const to = from + pageSize - 1;
 
         let query = employeesTable().select(
-            `id, employee_code, name, email, aadhar_number, address, state, city, zone_id, branch_id, branches ( branch_name ), pincode, pan_number, total_experience, joining_date, previous_document_path, photo_url, previous_document_type, designation, reporting_manager_email, reporting_manager_phone, phone, department, status, attendance_type, roles ( name )`,
+            `id, employee_code, name, email, aadhar_number, address, state, city, zone_id, branch_id, branches ( branch_name ), pincode, pan_number, total_experience, joining_date, previous_document_path, previous_document_type, designation, reporting_manager_email, reporting_manager_phone, phone, department, status, attendance_type, roles ( name )`,
             { count: "exact" }
         );
 

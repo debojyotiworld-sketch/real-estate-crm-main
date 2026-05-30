@@ -1,110 +1,119 @@
-import React from "react";
+import React from 'react';
+import { format } from 'date-fns';
 
-export type InvoiceData = {
-  customer_name: string;
-  address: string;
-  invoice_no: string;
-  date: string;
-  property_title: string;
-  executive_name: string;
-  token: number;
-  brokerage: number;
-  due: number;
-  total: number;
-};
+interface InvoiceProps {
+  booking: any;
+  currentPayment?: any; // The specific 50% or partial payment object
+}
 
-const formatMoney = (value: number) =>
-  new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(value || 0);
+export const InvoiceTemplate = React.forwardRef<HTMLDivElement, InvoiceProps>(({ booking, currentPayment }, ref) => {
+  // Default values to prevent crash
+  const totalAmount = Number(booking?.total_amount || 0);
+  const previouslyPaid = Number(booking?.paid_amount || 0) - Number(currentPayment?.amount || 0);
+  const currentReceived = Number(currentPayment?.amount || booking?.paid_amount || 0);
+  const balanceDue = totalAmount - (previouslyPaid + currentReceived);
 
-const InvoiceTemplate = React.forwardRef<HTMLDivElement, { data: InvoiceData }>(({ data }, ref) => {
+  const receiptNo = currentPayment?.invoice_no || `INV-${booking?.id?.substring(0, 8).toUpperCase()}`;
+  const paymentDate = currentPayment?.date ? new Date(currentPayment.date) : new Date();
+
   return (
-    <div ref={ref} style={{ width: 794, minHeight: 1123, padding: 48, fontFamily: "Arial", color: "#111827", background: "#fff" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", borderBottom: "3px solid #0f172a", paddingBottom: 20 }}>
+    <div ref={ref} className="p-10 bg-white text-black w-full max-w-[800px] mx-auto font-sans" style={{ minHeight: '1056px' }}>
+      {/* Header */}
+      <div className="flex justify-between items-start border-b-2 border-slate-800 pb-6 mb-8">
         <div>
-          <h1 style={{ margin: 0, color: "#0f172a", fontSize: 28 }}>Phoenix Realesthatic</h1>
-          <p style={{ margin: "8px 0 0", color: "#64748b" }}>Turning Properties into Prosperities</p>
+          <h1 className="text-3xl font-black tracking-tight text-slate-900 uppercase">PHOENIX REAL ESTATES</h1>
+          <p className="text-sm text-slate-500 mt-1">123 Business Avenue, Tech Park</p>
+          <p className="text-sm text-slate-500">Kolkata, West Bengal - 700091</p>
+          <p className="text-sm text-slate-500">GSTIN: 19ABCDE1234F1Z5</p>
         </div>
-        <div style={{ textAlign: "right" }}>
-          <h2 style={{ margin: 0, color: "#ea580c", fontSize: 26 }}>BOOKING INVOICE</h2>
-          <p style={{ margin: "8px 0 0" }}>#{data.invoice_no}</p>
-          <p style={{ margin: "4px 0 0", color: "#64748b" }}>{data.date}</p>
-        </div>
-      </header>
-
-      <section style={{ display: "flex", justifyContent: "space-between", gap: 32, marginTop: 32 }}>
-        <div>
-          <p style={{ margin: 0, color: "#64748b", fontSize: 12, textTransform: "uppercase" }}>Invoice To</p>
-          <h3 style={{ margin: "8px 0 4px", fontSize: 18 }}>{data.customer_name}</h3>
-          <p style={{ margin: 0, color: "#475569", lineHeight: 1.5 }}>{data.address}</p>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <p style={{ margin: 0, color: "#64748b", fontSize: 12, textTransform: "uppercase" }}>Property</p>
-          <h3 style={{ margin: "8px 0 4px", fontSize: 18 }}>{data.property_title}</h3>
-          <p style={{ margin: 0, color: "#475569" }}>Executive: {data.executive_name}</p>
-        </div>
-      </section>
-
-      <table style={{ width: "100%", marginTop: 40, borderCollapse: "collapse", fontSize: 14 }}>
-        <thead>
-          <tr style={{ background: "#0f172a", color: "#fff" }}>
-            <th style={{ padding: 12, textAlign: "left" }}>Description</th>
-            <th style={{ padding: 12, textAlign: "right" }}>Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          <InvoiceRow label="Token / Booking Amount Received" amount={data.token} />
-          <InvoiceRow label="Brokerage Charge" amount={data.brokerage} />
-          <InvoiceRow label="Balance Payable by Customer" amount={data.due} muted />
-        </tbody>
-      </table>
-
-      <div style={{ marginTop: 28, display: "flex", justifyContent: "flex-end" }}>
-        <div style={{ width: 300, border: "1px solid #cbd5e1", borderRadius: 12, padding: 18 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-            <span>Invoice Total</span>
-            <strong>{formatMoney(data.total)}</strong>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", color: "#64748b" }}>
-            <span>Pending Balance</span>
-            <span>{formatMoney(data.due)}</span>
+        <div className="text-right">
+          <h2 className="text-3xl font-bold text-indigo-700 uppercase">Payment Receipt</h2>
+          <div className="mt-2 space-y-1">
+            <p className="text-sm"><strong>Receipt No:</strong> {receiptNo}</p>
+            <p className="text-sm"><strong>Date:</strong> {format(paymentDate, 'dd MMM, yyyy')}</p>
+            <p className="text-sm"><strong>Mode:</strong> {currentPayment?.mode || 'N/A'} {currentPayment?.ref_no ? `(${currentPayment.ref_no})` : ''}</p>
           </div>
         </div>
       </div>
 
-      <section style={{ marginTop: 48, color: "#475569", fontSize: 13, lineHeight: 1.7 }}>
-        <h4 style={{ color: "#111827", marginBottom: 8 }}>Terms</h4>
-        <p>This invoice confirms booking creation and received/payable commercial components. Balance payment and documentation milestones remain subject to agreement terms and company policy.</p>
-      </section>
+      {/* Bill To & Property Details */}
+      <div className="grid grid-cols-2 gap-8 mb-8">
+        <div>
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Received From</h3>
+          <p className="text-lg font-bold text-slate-800">{booking?.customers?.name || 'Customer Name'}</p>
+          <p className="text-sm text-slate-600">{booking?.customers?.phone || 'Phone N/A'}</p>
+          <p className="text-sm text-slate-600">{booking?.customers?.email || 'Email N/A'}</p>
+        </div>
+        <div>
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Against Property / Deal</h3>
+          <p className="text-base font-semibold text-slate-800">{booking?.properties?.title || 'Property Details'}</p>
+          <p className="text-sm text-slate-600">Booking ID: {booking?.id?.substring(0, 8).toUpperCase()}</p>
+        </div>
+      </div>
 
-      <footer style={{ marginTop: 96, display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+      {/* Payment Details Table */}
+      <table className="w-full mb-8 border-collapse">
+        <thead>
+          <tr className="bg-slate-100">
+            <th className="py-3 px-4 text-left text-sm font-bold text-slate-700 border-b">Description</th>
+            <th className="py-3 px-4 text-right text-sm font-bold text-slate-700 border-b">Amount (INR)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className="py-4 px-4 border-b text-sm text-slate-800">
+              <span className="font-semibold">Partial Payment / Installment</span>
+              <br />
+              <span className="text-xs text-slate-500">Towards deal value for property booking.</span>
+            </td>
+            <td className="py-4 px-4 border-b text-right text-base font-bold text-slate-800">
+              ₹ {currentReceived.toLocaleString()}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* Deal Summary / Math */}
+      <div className="flex justify-end">
+        <div className="w-1/2 space-y-3">
+          <div className="flex justify-between text-sm text-slate-600">
+            <span>Total Deal Value:</span>
+            <span className="font-semibold">₹ {totalAmount.toLocaleString()}</span>
+          </div>
+          {previouslyPaid > 0 && (
+            <div className="flex justify-between text-sm text-slate-600">
+              <span>Previously Received:</span>
+              <span className="font-semibold">₹ {previouslyPaid.toLocaleString()}</span>
+            </div>
+          )}
+          <div className="flex justify-between text-base font-bold text-slate-800 border-t pt-2 border-slate-200">
+            <span>Amount Received Now:</span>
+            <span className="text-indigo-700">₹ {currentReceived.toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between text-sm text-rose-600 font-bold bg-rose-50 p-2 rounded">
+            <span>Balance Due:</span>
+            <span>₹ {balanceDue > 0 ? balanceDue.toLocaleString() : '0 (Fully Paid)'}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer Signatures */}
+      <div className="mt-24 grid grid-cols-2 gap-8 text-center">
         <div>
-          <p style={{ marginBottom: 52 }}>For Phoenix Real Estate</p>
-          <p style={{ borderTop: "1px solid #111827", paddingTop: 8 }}>Authorized Signatory</p>
+          <div className="border-t border-slate-300 w-48 mx-auto pt-2 text-sm text-slate-600">Customer Signature</div>
         </div>
         <div>
-          <p style={{ marginBottom: 52 }}>Customer Acceptance</p>
-          <p style={{ borderTop: "1px solid #111827", paddingTop: 8 }}>{data.customer_name}</p>
+          <div className="border-t border-slate-300 w-48 mx-auto pt-2 text-sm text-slate-600">Authorized Signatory</div>
         </div>
-      </footer>
+      </div>
+      
+      <div className="mt-12 text-center text-xs text-slate-400 border-t pt-4">
+        This is a computer-generated receipt and does not require a physical signature for validity.
+      </div>
     </div>
   );
 });
 
-InvoiceTemplate.displayName = "InvoiceTemplate";
-
-function InvoiceRow({ label, amount, muted }: { label: string; amount: number; muted?: boolean }) {
-  return (
-    <tr>
-      <td style={{ padding: 12, border: "1px solid #cbd5e1", color: muted ? "#64748b" : "#111827" }}>{label}</td>
-      <td style={{ padding: 12, border: "1px solid #cbd5e1", textAlign: "right", color: muted ? "#64748b" : "#111827" }}>
-        {formatMoney(amount)}
-      </td>
-    </tr>
-  );
-}
+InvoiceTemplate.displayName = 'InvoiceTemplate';
 
 export default InvoiceTemplate;
