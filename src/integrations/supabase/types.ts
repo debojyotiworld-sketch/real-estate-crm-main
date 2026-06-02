@@ -740,7 +740,7 @@ export type Database = {
           employer_pf: number | null
           esi_applicable: boolean | null
           esi_employee_contribution: number | null
-          esi_number: number | null
+          esi_number: Text | null
           gratuity: number | null
           gross_salary: number | null
           hra: number | null
@@ -753,13 +753,13 @@ export type Database = {
           other_deductions: number | null
           pf_applicable: boolean | null
           pf_employee_contribution: number | null
-          pf_number: number | null
+          pf_number: Text | null
           professional_tax: number | null
           salary_type: string | null
           special_allowance: number | null
           tds: number | null
           total_deductions: number | null
-          uan_number: number | null
+          uan_number: Text | null
         }
         Insert: {
           basic?: number | null
@@ -773,7 +773,7 @@ export type Database = {
           employer_pf?: number | null
           esi_applicable?: boolean | null
           esi_employee_contribution?: number | null
-          esi_number?: number | null
+          esi_number?: Text | null
           gratuity?: number | null
           gross_salary?: number | null
           hra?: number | null
@@ -786,13 +786,13 @@ export type Database = {
           other_deductions?: number | null
           pf_applicable?: boolean | null
           pf_employee_contribution?: number | null
-          pf_number?: number | null
+          pf_number?: Text | null
           professional_tax?: number | null
           salary_type?: string | null
           special_allowance?: number | null
           tds?: number | null
           total_deductions?: number | null
-          uan_number?: number | null
+          uan_number?: Text | null
         }
         Update: {
           basic?: number | null
@@ -806,7 +806,7 @@ export type Database = {
           employer_pf?: number | null
           esi_applicable?: boolean | null
           esi_employee_contribution?: number | null
-          esi_number?: number | null
+          esi_number?: Text | null
           gratuity?: number | null
           gross_salary?: number | null
           hra?: number | null
@@ -819,13 +819,13 @@ export type Database = {
           other_deductions?: number | null
           pf_applicable?: boolean | null
           pf_employee_contribution?: number | null
-          pf_number?: number | null
+          pf_number?: Text | null
           professional_tax?: number | null
           salary_type?: string | null
           special_allowance?: number | null
           tds?: number | null
           total_deductions?: number | null
-          uan_number?: number | null
+          uan_number?: Text | null
         }
         Relationships: [
           {

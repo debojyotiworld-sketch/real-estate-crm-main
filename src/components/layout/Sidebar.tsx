@@ -139,47 +139,49 @@ export function Sidebar() {
       setLoading(false);
     }
   };
+
   return (
     <>
       {/* Mobile Overlay */}
       {isMobile && isOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden animate-fade-in"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden animate-in fade-in duration-300"
           onClick={close}
         />
       )}
 
       <aside
         className={cn(
-          "fixed left-0 top-0 z-50 flex h-screen flex-col border-r border-white/10 bg-sidebar shadow-xl transition-all duration-300",
+          "fixed left-0 top-0 z-50 flex h-screen flex-col border-r border-white/5 bg-sidebar/95 backdrop-blur-md shadow-2xl transition-all duration-300 ease-in-out",
           sidebarWidth,
           isMobile && !isOpen && "-translate-x-full",
           isMobile && isOpen && "translate-x-0"
         )}
       >
         {/* Logo / Brand header */}
-        <div className={cn("flex h-16 items-center gap-3 border-b border-white/10 px-4", isCollapsed && !isMobile && "justify-center px-3")}>
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-white shadow-sm">
+        <div className={cn("flex h-20 items-center gap-4 border-b border-white/5 px-5", isCollapsed && !isMobile && "justify-center px-2")}>
+          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-white/5 p-2 shadow-inner ring-1 ring-white/10 transition-transform duration-300 hover:scale-105">
             <img src="/favicon.ico" alt="Logo" className="w-full h-full object-contain" />
           </div>
 
-          <div className={cn("min-w-0 transition-opacity", isCollapsed && !isMobile && "hidden")}>
-            <div className="font-semibold leading-tight truncate text-white">Phoenix</div>
-            <div className="text-[11px] -mt-0.5 truncate text-slate-400">
+          <div className={cn("min-w-0 transition-all duration-300", isCollapsed && !isMobile ? "opacity-0 hidden" : "opacity-100 block")}>
+            <div className="font-bold tracking-wide leading-tight truncate text-white">Phoenix</div>
+            <div className="text-[12px] font-medium mt-0.5 tracking-wider truncate text-orange-400/80 uppercase">
               Real Estate CRM
             </div>
           </div>
         </div>
 
         {/* Nav */}
-        <nav className="custom-scrollbar p-3 md:h-[calc(100vh-4rem)] md:overflow-y-auto">
-          <div className="space-y-1">
+        <nav className="custom-scrollbar px-3 py-6 md:h-[calc(100vh-5rem)] md:overflow-y-auto">
+          <div className="space-y-1.5">
             {loading ? (
-              <div className="flex items-center justify-center py-8 text-slate-400">
-                <Loader2 className="h-5 w-5 animate-spin" />
+              <div className="flex flex-col items-center justify-center py-12 gap-3 text-slate-400">
+                <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
+                {!isCollapsed && <span className="text-sm font-medium animate-pulse">Loading modules...</span>}
               </div>
             ) : modules.length === 0 ? (
-              <div className={cn("rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-slate-400", isCollapsed && !isMobile && "hidden")}>
+              <div className={cn("rounded-xl border border-white/5 bg-white/5 p-4 text-center text-sm font-medium text-slate-400 shadow-inner", isCollapsed && !isMobile && "hidden")}>
                 No modules assigned
               </div>
             ) : modules.map((m) => {
@@ -192,23 +194,28 @@ export function Sidebar() {
                   key={m.id}
                   to={route}
                   title={m.name}
-                  className={[
-                    "group relative flex items-center gap-3",
-                    "px-3 py-2.5 rounded-lg",
-                    "text-sm font-medium transition-all duration-200",
-                    isCollapsed && !isMobile ? "justify-center" : "border-l-4",
+                  className={cn(
+                    "group relative flex items-center gap-3.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-300 overflow-hidden",
+                    isCollapsed && !isMobile && "justify-center",
                     active
-                      ? "bg-white/10 text-white border-orange-500 shadow-sm"
-                      : "text-slate-300 border-transparent hover:bg-white/5 hover:text-white",
-                  ].join(" ")}
+                      ? "bg-gradient-to-r from-orange-500/10 to-transparent text-orange-400 border border-orange-500/20 shadow-sm"
+                      : "text-slate-400 border border-transparent hover:bg-white/5 hover:text-slate-100 hover:border-white/5"
+                  )}
                 >
+                  {/* Subtle active indicator dot for collapsed view */}
+                  {active && isCollapsed && !isMobile && (
+                    <span className="absolute left-1 top-1/2 -translate-y-1/2 h-1.5 w-1.5 rounded-full bg-orange-500" />
+                  )}
+                  
                   <Icon
-                    className={[
-                      "w-5 h-5 flex-shrink-0 transition-colors",
-                      active ? "text-orange-400" : "text-slate-400 group-hover:text-slate-200",
-                    ].join(" ")}
+                    className={cn(
+                      "w-5 h-5 flex-shrink-0 transition-all duration-300",
+                      active ? "text-orange-400 drop-shadow-sm scale-110" : "text-slate-400 group-hover:scale-110 group-hover:text-slate-200"
+                    )}
                   />
-                  <span className={cn("truncate", isCollapsed && !isMobile && "hidden")}>{m.name}</span>
+                  <span className={cn("truncate tracking-wide", isCollapsed && !isMobile && "hidden")}>
+                    {m.name}
+                  </span>
                 </Link>
               );
             })}
@@ -220,7 +227,7 @@ export function Sidebar() {
           <Button
             variant="ghost"
             size="icon"
-            className="absolute -right-3 top-20 h-7 w-7 rounded-full border border-border bg-card text-foreground shadow-md hover:bg-muted"
+            className="absolute -right-3.5 top-24 h-7 w-7 rounded-full border border-white/10 bg-sidebar text-slate-300 shadow-xl hover:bg-white/10 hover:text-white transition-all duration-300 z-50 hover:scale-110"
             onClick={() => setCollapsed(!isCollapsed)}
           >
             {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}

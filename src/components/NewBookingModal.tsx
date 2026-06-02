@@ -1,736 +1,451 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import html2pdf from "html2pdf.js";
-import { CalendarDays, CheckCircle2, FileText, IndianRupee, UserRound } from "lucide-react";
-
-import { ProfessionalDialog } from "@/components/common/ProfessionalDialog";
-import { InvoiceTemplate } from "@/components/InvoiceTemplate";
+import React, { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
+import { 
+    Loader2, UserRound, IndianRupee, CheckCircle2, 
+    CalendarDays, Handshake, ShieldCheck, Save 
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 
 interface Props {
-  open: boolean;
-  onClose: () => void;
-  onSuccess: () => void;
+    open: boolean;
+    onOpenChange?: (open: boolean) => void;
+    onClose?: () => void; // Added foolproof safety
+    onSuccess?: () => void;
 }
 
-type CustomerOption = {
-  id: string;
-  full_name: string;
-  phone: string;
-  email: string | null;
-  address: string | null;
-  lead_id: string | null;
+const money = (amount: number | string | undefined) => {
+    if (!amount) return "₹ 0";
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(amount));
 };
 
-type PropertyOption = {
-  id: string;
-  title: string;
-  price: number | null;
-  booking_amount: number | null;
-  address: string | null;
-  city: string | null;
-  status: string | null;
-  availability: string | null;
-  zone_id: string | null;
-};
+export const NewBookingModal = ({ open, onOpenChange, onClose, onSuccess }: Props) => {
+    const [saving, setSaving] = useState(false);
+    const [loadingData, setLoadingData] = useState(false);
 
-type EmployeeOption = {
-  id: string;
-  name: string | null;
-};
+    // Lookup Data
+    const [customers, setCustomers] = useState<any[]>([]);
+    const [properties, setProperties] = useState<any[]>([]);
+    const [employees, setEmployees] = useState<any[]>([]);
 
-type BookingForm = {
-  customer_id: string;
-  property_id: string;
-  assigned_to: string;
-  total_amount: string;
-  token_amount: string;
-  brokerage_percent: string;
-  booking_date: string;
-  agreement_duration_days: string;
-  brokerage_given: "yes" | "no";
-  negotiable_amount: string;
-  notes: string;
-};
+    // Unified & Detailed Form State
+    const [form, setForm] = useState({
+        booking_code: "",
+        customer_id: "",
+        property_id: "",
+        assigned_to: "",
+        booking_date: new Date().toISOString().split("T")[0],
+        agreement_duration_days: "30",
+        
+        // Commercials
+        listed_price: "",
+        negotiable_amount: "",
+        token_amount: "",
+        brokerage_percent: "2",
+        brokerage_given: "no",
+        brokerage_received_amount: "", 
+        
+        // Payment
+        payment_mode: "Bank Transfer",
+        payment_ref: "",
+        notes: ""
+    });
 
-const initialForm = (): BookingForm => ({
-  customer_id: "",
-  property_id: "",
-  assigned_to: "",
-  total_amount: "",
-  token_amount: "",
-  brokerage_percent: "2",
-  booking_date: new Date().toISOString().split("T")[0],
-  agreement_duration_days: "45",
-  brokerage_given: "no",
-  negotiable_amount: "",
-  notes: "",
-});
+    useEffect(() => {
+        if (open) {
+            fetchLookupData();
+            const randomString = Math.random().toString(36).substring(2, 8).toUpperCase();
+            setForm(prev => ({
+                ...prev, 
+                booking_code: `BKG-${randomString}`,
+                customer_id: "", property_id: "", assigned_to: "", 
+                listed_price: "", negotiable_amount: "", token_amount: "", 
+                brokerage_given: "no", brokerage_received_amount: "",
+                payment_mode: "Bank Transfer", payment_ref: "", notes: ""
+            }));
+        }
+    }, [open]);
 
-const money = (value: number) =>
-  new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(Number.isFinite(value) ? value : 0);
-
-const toNumber = (value: string | number | null | undefined) => {
-  const parsed = Number(value || 0);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const addDays = (date: string, days: number) => {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next.toISOString().split("T")[0];
-};
-
-const getErrorMessage = (error: unknown) => {
-  return error instanceof Error ? error.message : "Something went wrong";
-};
-
-export default function NewBookingModal({ open, onClose, onSuccess }: Props) {
-  const [loading, setLoading] = useState(false);
-  const [loadingOptions, setLoadingOptions] = useState(false);
-  const [customers, setCustomers] = useState<CustomerOption[]>([]);
-  const [filteredProperties, setFilteredProperties] = useState<PropertyOption[]>([]);
-  const [zoneEmployees, setZoneEmployees] = useState<EmployeeOption[]>([]);
-  const [form, setForm] = useState<BookingForm>(() => initialForm());
-  const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
-  const invoiceRef = useRef<HTMLDivElement | null>(null);
-
-  const selectedCustomer = useMemo(
-    () => customers.find((customer) => customer.id === form.customer_id) ?? null,
-    [customers, form.customer_id]
-  );
-
-  const selectedProperty = useMemo(
-    () => filteredProperties.find((property) => property.id === form.property_id) ?? null,
-    [filteredProperties, form.property_id]
-  );
-
-  const selectedExecutive = useMemo(
-    () => zoneEmployees.find((employee) => employee.id === form.assigned_to) ?? null,
-    [form.assigned_to, zoneEmployees]
-  );
-
-  const totalAmount = toNumber(form.negotiable_amount || form.total_amount);
-  const listedAmount = toNumber(form.total_amount);
-  const tokenAmount = toNumber(form.token_amount);
-  const brokeragePercent = toNumber(form.brokerage_percent);
-  const minimumInitialPayment = Math.round(totalAmount * 0.1);
-  const initialPayment = Math.max(tokenAmount, minimumInitialPayment);
-  const balanceAmount = Math.max(totalAmount - initialPayment, 0);
-  const brokerageAmount = Math.round((totalAmount * brokeragePercent) / 100);
-  const agreementDays = Math.max(toNumber(form.agreement_duration_days), 1);
-
-  const updateForm = <K extends keyof BookingForm>(key: K, value: BookingForm[K]) => {
-    setForm((previous) => ({ ...previous, [key]: value }));
-  };
-
-  const resetState = () => {
-    setForm(initialForm());
-    setFilteredProperties([]);
-    setZoneEmployees([]);
-    setInvoiceData(null);
-  };
-
-  useEffect(() => {
-    if (!open) return;
-
-    const loadCustomers = async () => {
-      setLoadingOptions(true);
-      const { data, error } = await supabase
-        .from("customers")
-        .select("id, full_name, phone, email, address, lead_id")
-        .order("full_name", { ascending: true });
-
-      if (error) {
-        console.error(error);
-        toast.error("Failed to load customers");
-      } else {
-        setCustomers((data ?? []) as CustomerOption[]);
-      }
-      setLoadingOptions(false);
+    const fetchLookupData = async () => {
+        setLoadingData(true);
+        try {
+            const [custRes, propRes, empRes] = await Promise.all([
+                supabase.from('customers').select('id, full_name, phone').order('full_name'),
+                supabase.from('properties').select('id, title, price, property_type').eq('status', 'available').order('title'),
+                supabase.from('employees').select('id, name, employee_code').eq('status', 'active').order('name')
+            ]);
+            
+            if (custRes.data) setCustomers(custRes.data);
+            if (propRes.data) setProperties(propRes.data);
+            if (empRes.data) setEmployees(empRes.data);
+        } catch (error) {
+            toast.error("Failed to load reference data");
+        } finally {
+            setLoadingData(false);
+        }
     };
 
-    void loadCustomers();
-  }, [open]);
+    const updateForm = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }));
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (loading) return;
-    if (!nextOpen) {
-      resetState();
-      onClose();
-    }
-  };
+    const handlePropertyChange = (propId: string) => {
+        const selectedProp = properties.find(p => p.id === propId);
+        updateForm("property_id", propId);
+        updateForm("listed_price", selectedProp?.price ? String(selectedProp.price) : "");
+    };
 
-  const handleCustomerChange = async (customerId: string) => {
-    const customer = customers.find((item) => item.id === customerId) ?? null;
+    // Safe close handler to prevent crash
+    const handleModalClose = () => {
+        if (typeof onOpenChange === "function") onOpenChange(false);
+        if (typeof onClose === "function") onClose();
+    };
 
-    setForm((previous) => ({
-      ...previous,
-      customer_id: customerId,
-      property_id: "",
-      assigned_to: "",
-      total_amount: "",
-      token_amount: "",
-      negotiable_amount: "",
-    }));
-    setFilteredProperties([]);
-    setZoneEmployees([]);
+    // Math Calculations
+    const finalValue = Number(form.negotiable_amount || form.listed_price || 0);
+    const tokenPaid = Number(form.token_amount || 0);
+    const balanceDue = finalValue - tokenPaid;
+    const brokerageAmount = (finalValue * Number(form.brokerage_percent || 0)) / 100;
 
-    if (!customer?.lead_id) {
-      toast.info("This customer is not linked to a lead, so no shortlisted properties were found.");
-      return;
-    }
+    const selectedCustomer = customers.find(c => c.id === form.customer_id);
+    const selectedProperty = properties.find(p => p.id === form.property_id);
+    const selectedExecutive = employees.find(e => e.id === form.assigned_to);
 
-    const { data, error } = await supabase
-      .from("lead_properties")
-      .select(`
-        properties (
-          id,
-          title,
-          price,
-          booking_amount,
-          address,
-          city,
-          status,
-          availability,
-          zone_id
-        )
-      `)
-      .eq("lead_id", customer.lead_id)
-      .eq("is_active", true);
+    const validateForm = () => {
+        if (!form.customer_id) return "Please select a Customer";
+        if (!form.property_id) return "Please select a Property";
+        if (!form.assigned_to) return "Please assign a Sales Executive";
+        if (finalValue <= 0) return "Valid Final Deal Amount is required";
+        if (tokenPaid > finalValue) return "Token paid cannot exceed the final deal value";
+        if (tokenPaid > 0 && !form.payment_mode) return "Payment mode is required for token amount";
+        if (form.brokerage_given === "yes" && (!form.brokerage_received_amount || Number(form.brokerage_received_amount) <= 0)) {
+            return "Please enter the exact Brokerage Received Amount";
+        }
+        return null;
+    };
 
-    if (error) {
-      console.error(error);
-      toast.error("Failed to load shortlisted properties");
-      return;
-    }
+    const handleSubmit = async () => {
+        const errorMsg = validateForm();
+        if (errorMsg) { toast.error(errorMsg); return; }
 
-    const properties = (data ?? [])
-      .map((row) => row.properties)
-      .filter(Boolean) as unknown as PropertyOption[];
+        setSaving(true);
+        try {
+            // Safe packaging for extra note details
+            let finalNotes = form.notes;
+            if (form.brokerage_given === "yes") {
+                finalNotes = `[Brokerage Recd: ₹${form.brokerage_received_amount}] ${finalNotes}`;
+            }
 
-    setFilteredProperties(
-      properties.filter((property) => {
-        const status = (property.status ?? "").toLowerCase();
-        const availability = (property.availability ?? "").toLowerCase();
-        return !["sold", "booked", "cancelled"].includes(status) && availability !== "sold";
-      })
-    );
-  };
+            // 1. Insert Master Booking
+            const bookingPayload = {
+                booking_code: form.booking_code,
+                customer_id: form.customer_id,
+                property_id: form.property_id,
+                assigned_to: form.assigned_to,
+                booking_date: form.booking_date,
+                agreement_duration_days: Number(form.agreement_duration_days),
+                total_amount: finalValue,
+                negotiable_amount: finalValue,
+                token_amount: tokenPaid,
+                balance_amount: balanceDue,
+                brokerage_percent: Number(form.brokerage_percent),
+                brokerage_amount: brokerageAmount,
+                brokerage_given: form.brokerage_given === "yes", 
+                notes: finalNotes,
+            };
 
-  const handlePropertyChange = async (propertyId: string) => {
-    const property = filteredProperties.find((item) => item.id === propertyId) ?? null;
+            const { data: newBooking, error: bookingError } = await supabase
+                .from('bookings')
+                .insert(bookingPayload as any)
+                .select('id')
+                .single();
+                
+            if (bookingError) throw bookingError;
 
-    setForm((previous) => ({
-      ...previous,
-      property_id: propertyId,
-      assigned_to: "",
-      total_amount: property?.price ? String(property.price) : previous.total_amount,
-      token_amount: property?.booking_amount ? String(property.booking_amount) : previous.token_amount,
-    }));
-    setZoneEmployees([]);
+            // 2. Insert Token to Payments Ledger (banking style)
+            if (tokenPaid > 0 && newBooking) {
+                const paymentPayload = {
+                    booking_id: newBooking.id,
+                    amount: tokenPaid,
+                    payment_date: new Date().toISOString(),
+                    payment_mode: form.payment_mode,
+                    payment_type: "Token Advance",
+                    status: "Completed",
+                    notes: `Ref: ${form.payment_ref || 'N/A'} | Invoice: INV-${form.booking_code}-TOKEN`
+                };
+                const { error: payError } = await supabase.from('payments').insert(paymentPayload as any);
+                if (payError) console.error("Payment insert failed:", payError);
+            }
 
-    if (!property?.zone_id) {
-      toast.info("This property has no sales zone, so assign the executive manually later if needed.");
-      return;
-    }
+            // 3. Mark Property Sold
+            await supabase.from('properties').update({ status: 'sold' } as any).eq('id', form.property_id);
 
-    const { data, error } = await supabase
-      .from("employees")
-      .select("id, name")
-      .eq("zone_id", property.zone_id)
-      .eq("department", "Sales")
-      .in("status", ["active", "confirmed", "probation"]);
+            toast.success("Booking generated and Ledger updated successfully!");
+            if (onSuccess) onSuccess();
+            handleModalClose(); // Fixed closing mechanism
+        } catch (err: any) {
+            toast.error(err.message || "Failed to create booking");
+            updateForm("booking_code", `BKG-${Math.random().toString(36).substring(2, 8).toUpperCase()}`);
+        } finally {
+            setSaving(false);
+        }
+    };
 
-    if (error) {
-      console.error(error);
-      toast.error("Failed to load zone executives");
-      return;
-    }
+    const stepState = [
+        { label: "Customer Details", done: !!form.customer_id },
+        { label: "Select Property", done: !!form.property_id },
+        { label: "Final Deal Value", done: finalValue > 0 },
+        { label: "Review & Save", done: false }
+    ];
 
-    const executives = (data ?? []) as EmployeeOption[];
-    setZoneEmployees(executives);
+    return (
+        <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) handleModalClose(); }}>
+            <DialogContent className="max-w-[1100px] h-[90vh] flex flex-col p-0 overflow-hidden rounded-2xl bg-white shadow-2xl">
+                
+                {/* Header (Premium Theme) */}
+                <DialogHeader className="px-6 py-5 border-b bg-slate-50/50 flex flex-row items-center justify-between shrink-0 shadow-sm z-10">
+                    <div>
+                        <DialogTitle className="text-xl font-bold flex items-center gap-3 text-slate-800">
+                            <div className="bg-indigo-600 p-2 rounded-lg text-white shadow-md">
+                                <Handshake className="h-5 w-5"/>
+                            </div> 
+                            Create New Booking
+                        </DialogTitle>
+                        <p className="text-sm text-slate-500 mt-1 ml-11">Convert a qualified customer into a tracked sale with payment milestones.</p>
+                    </div>
+                    <div className="text-right">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Booking Reference</span>
+                        <span className="font-mono bg-white border border-slate-200 px-3 py-1 rounded-md text-slate-800 font-bold shadow-sm">{form.booking_code}</span>
+                    </div>
+                </DialogHeader>
 
-    if (executives.length === 1) {
-      updateForm("assigned_to", executives[0].id);
-    }
-  };
+                {loadingData ? (
+                    <div className="flex-1 flex justify-center items-center bg-slate-50/30"><Loader2 className="animate-spin h-8 w-8 text-indigo-600" /></div>
+                ) : (
+                    <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_360px] overflow-hidden">
+                        
+                        {/* LEFT COLUMN: FORM */}
+                        <div className="overflow-y-auto px-6 py-6 bg-slate-50/30">
+                            
+                            {/* Step Indicators */}
+                            <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+                                {stepState.map((step, index) => (
+                                    <div key={step.label} className={cn("rounded-xl border px-3 py-2.5 text-xs font-semibold flex items-center gap-2 transition-colors", step.done ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "bg-white border-slate-200 text-slate-400")}>
+                                        <span className={cn("flex h-5 w-5 items-center justify-center rounded-full text-[10px]", step.done ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500')}>
+                                            {step.done ? <CheckCircle2 className="h-3 w-3" /> : index + 1}
+                                        </span>
+                                        {step.label}
+                                    </div>
+                                ))}
+                            </div>
 
-  const validate = () => {
-    if (!form.customer_id) return "Select a customer";
-    if (!form.property_id) return "Select a property";
-    if (!form.assigned_to) return "Select a sales executive";
-    if (!form.booking_date) return "Select a booking date";
-    if (listedAmount <= 0) return "Enter a valid property value";
-    if (totalAmount <= 0) return "Enter a valid final booking value";
-    if (tokenAmount <= 0) return "Enter a valid token amount";
-    if (tokenAmount > totalAmount) return "Token amount cannot be greater than final booking value";
-    if (brokeragePercent < 0 || brokeragePercent > 100) return "Brokerage percent must be between 0 and 100";
-    if (toNumber(form.negotiable_amount) > listedAmount) return "Negotiable/final amount cannot exceed listed value";
-    if (tokenAmount < minimumInitialPayment) {
-      return `Token amount must be at least 10% of final value (${money(minimumInitialPayment)})`;
-    }
-    return null;
-  };
+                            <div className="space-y-6">
+                                {/* SECTION 1: Customer Details */}
+                                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                                    <div className="mb-5 flex items-center gap-2 border-b pb-3">
+                                        <div className="bg-blue-100 p-1.5 rounded-lg text-blue-700"><UserRound className="h-4 w-4" /></div>
+                                        <h3 className="font-bold text-slate-800">Customer & Property</h3>
+                                    </div>
 
-  const generateBookingCode = async () => {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const year = new Date().getFullYear().toString().slice(-2);
-      const month = String(new Date().getMonth() + 1).padStart(2, "0");
-      const sequence = String(Math.floor(1000 + Math.random() * 9000));
-      const code = `PRBK-${year}${month}-${sequence}`;
+                                    <div className="grid gap-5 md:grid-cols-2">
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs font-bold text-slate-600 uppercase">Customer <span className="text-rose-500">*</span></Label>
+                                            <Select value={form.customer_id} onValueChange={(v) => updateForm("customer_id", v)}>
+                                                <SelectTrigger className="h-11 bg-slate-50/50"><SelectValue placeholder="Select customer" /></SelectTrigger>
+                                                <SelectContent>
+                                                    {customers.map((c) => <SelectItem key={c.id} value={c.id}>{c.full_name} {c.phone ? `- ${c.phone}` : ""}</SelectItem>)}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
 
-      const { count, error } = await supabase
-        .from("bookings")
-        .select("id", { count: "exact", head: true })
-        .eq("booking_code", code);
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs font-bold text-slate-600 uppercase">Shortlisted Property <span className="text-rose-500">*</span></Label>
+                                            <Select value={form.property_id} onValueChange={handlePropertyChange} disabled={!form.customer_id}>
+                                                <SelectTrigger className="h-11 bg-slate-50/50"><SelectValue placeholder={!form.customer_id ? "Select customer first" : "Select property"}/></SelectTrigger>
+                                                <SelectContent>
+                                                    {properties.map((p) => <SelectItem key={p.id} value={p.id}>{p.title} {p.price ? `- ${money(p.price)}` : ""}</SelectItem>)}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
 
-      if (error) throw error;
-      if (!count) return code;
-    }
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs font-bold text-slate-600 uppercase">Sales Executive <span className="text-rose-500">*</span></Label>
+                                            <Select value={form.assigned_to} onValueChange={(v) => updateForm("assigned_to", v)} disabled={!form.property_id}>
+                                                <SelectTrigger className="h-11 bg-slate-50/50"><SelectValue placeholder={!form.property_id ? "Select property first" : "Select executive"}/></SelectTrigger>
+                                                <SelectContent>
+                                                    {employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
 
-    throw new Error("Unable to generate a unique booking code. Please try again.");
-  };
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs font-bold text-slate-600 uppercase">Booking Date</Label>
+                                            <Input type="date" value={form.booking_date} onChange={(e) => updateForm("booking_date", e.target.value)} className="h-11 bg-slate-50/50"/>
+                                        </div>
+                                    </div>
+                                </section>
 
-  const downloadInvoice = async (invoice: InvoiceData) => {
-    if (!invoiceRef.current) return;
+                                {/* SECTION 2: Commercials */}
+                                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                                    <div className="mb-5 flex items-center gap-2 border-b pb-3">
+                                        <div className="bg-amber-100 p-1.5 rounded-lg text-amber-700"><IndianRupee className="h-4 w-4" /></div>
+                                        <h3 className="font-bold text-slate-800">Commercial Terms</h3>
+                                    </div>
 
-    await html2pdf()
-      .set({
-        margin: 0.35,
-        filename: `Invoice-${invoice.invoice_no}.pdf`,
-        image: { type: "jpeg", quality: 1 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
-      })
-      .from(invoiceRef.current)
-      .save();
-  };
+                                    <div className="grid gap-5 md:grid-cols-2">
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs font-bold text-slate-600 uppercase">Listed Property Value (₹)</Label>
+                                            <Input type="number" min="0" value={form.listed_price} readOnly className="h-11 bg-slate-100 text-slate-500" placeholder="Auto-filled" />
+                                        </div>
 
-  const handleSubmit = async () => {
-    const validationError = validate();
-    if (validationError) {
-      toast.error(validationError);
-      return;
-    }
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs font-bold text-slate-600 uppercase">Final Negotiated Value (₹) <span className="text-rose-500">*</span></Label>
+                                            <Input type="number" min="0" value={form.negotiable_amount} onChange={(e) => updateForm("negotiable_amount", e.target.value)} className="h-11 font-bold text-indigo-700 border-indigo-200 bg-indigo-50/30" placeholder="Enter final deal value" />
+                                        </div>
 
-    setLoading(true);
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs font-bold text-slate-600 uppercase">Token Paid Now (₹)</Label>
+                                            <Input type="number" min="0" value={form.token_amount} onChange={(e) => updateForm("token_amount", e.target.value)} className="h-11 font-bold text-emerald-700 border-emerald-200 bg-emerald-50/30" placeholder="0.00" />
+                                        </div>
 
-    try {
-      const bookingCode = await generateBookingCode();
-      const dueDate = addDays(form.booking_date, agreementDays);
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs font-bold text-slate-600 uppercase">Token Payment Mode</Label>
+                                            <Select value={form.payment_mode} onValueChange={(v) => updateForm("payment_mode", v)} disabled={!form.token_amount}>
+                                                <SelectTrigger className="h-11"><SelectValue/></SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="Bank Transfer">NEFT / RTGS / IMPS</SelectItem>
+                                                    <SelectItem value="UPI">UPI</SelectItem>
+                                                    <SelectItem value="Cheque">Cheque</SelectItem>
+                                                    <SelectItem value="Cash">Cash</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
 
-      const bookingPayload = {
-        booking_code: bookingCode,
-        customer_id: form.customer_id,
-        property_id: form.property_id,
-        assigned_to: form.assigned_to,
-        total_amount: totalAmount,
-        token_amount: tokenAmount,
-        initial_payment: initialPayment,
-        balance_amount: balanceAmount,
-        brokerage_percent: brokeragePercent,
-        brokerage_amount: brokerageAmount,
-        brokerage_given: form.brokerage_given === "yes",
-        booking_date: form.booking_date,
-        agreement_duration_days: agreementDays,
-        negotiable_amount: form.negotiable_amount ? totalAmount : null,
-        stage: "booking",
-        notes: form.notes.trim() || null,
-      };
+                                        <div className="space-y-1.5 border-t pt-4 md:col-span-2">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <h4 className="text-xs font-bold text-indigo-900 uppercase">Brokerage Structure</h4>
+                                            </div>
+                                        </div>
 
-      const { data: booking, error: bookingError } = await supabase
-        .from("bookings")
-        .insert(bookingPayload)
-        .select("id")
-        .single();
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs font-bold text-slate-600 uppercase">Brokerage %</Label>
+                                            <Input type="number" step="0.1" value={form.brokerage_percent} onChange={(e) => updateForm("brokerage_percent", e.target.value)} className="h-11" />
+                                        </div>
 
-      if (bookingError) throw bookingError;
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs font-bold text-slate-600 uppercase">Agreement Timeline (Days)</Label>
+                                            <Input type="number" min="1" value={form.agreement_duration_days} onChange={(e) => updateForm("agreement_duration_days", e.target.value)} className="h-11" />
+                                        </div>
 
-      const paymentRows = [
-        {
-          booking_id: booking.id,
-          milestone: "Booking / Token Amount",
-          amount: initialPayment,
-          paid_amount: tokenAmount,
-          due_date: form.booking_date,
-          status: tokenAmount >= initialPayment ? "paid" : "partial",
-        },
-        {
-          booking_id: booking.id,
-          milestone: "Balance Amount",
-          amount: balanceAmount,
-          paid_amount: 0,
-          due_date: dueDate,
-          status: balanceAmount > 0 ? "pending" : "paid",
-        },
-      ];
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs font-bold text-slate-600 uppercase">Brokerage Received?</Label>
+                                            <Select value={form.brokerage_given} onValueChange={(v) => {
+                                                updateForm("brokerage_given", v);
+                                                if(v === "yes" && !form.brokerage_received_amount) {
+                                                    updateForm("brokerage_received_amount", String(brokerageAmount));
+                                                }
+                                            }}>
+                                                <SelectTrigger className="h-11"><SelectValue/></SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="no">No, Pending / Receivable</SelectItem>
+                                                    <SelectItem value="yes">Yes, Received</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
 
-      if (brokerageAmount > 0) {
-        paymentRows.push({
-          booking_id: booking.id,
-          milestone: "Brokerage",
-          amount: brokerageAmount,
-          paid_amount: form.brokerage_given === "yes" ? brokerageAmount : 0,
-          due_date: form.booking_date,
-          status: form.brokerage_given === "yes" ? "paid" : "pending",
-        });
-      }
+                                        {form.brokerage_given === "yes" && (
+                                            <div className="space-y-1.5 animate-in fade-in zoom-in duration-200">
+                                                <Label className="text-xs font-bold text-emerald-600 uppercase">Brokerage Amount Recd. (₹)</Label>
+                                                <Input type="number" min="0" value={form.brokerage_received_amount} onChange={(e) => updateForm("brokerage_received_amount", e.target.value)} className="h-11 font-bold text-emerald-700 border-emerald-200 bg-emerald-50/30" />
+                                            </div>
+                                        )}
 
-      const { error: paymentError } = await supabase.from("payments").insert(paymentRows);
-      if (paymentError) throw paymentError;
+                                        <div className="space-y-1.5 border-t pt-4 md:col-span-2">
+                                            <Label className="text-xs font-bold text-slate-600 uppercase">Internal Notes / Payment Reference</Label>
+                                            <Textarea value={form.notes} onChange={(e) => updateForm("notes", e.target.value)} placeholder="Promised documents, special terms, UTR numbers, etc." className="h-20 resize-none bg-slate-50/50" />
+                                        </div>
+                                    </div>
+                                </section>
+                            </div>
+                        </div>
 
-      await Promise.all([
-        supabase
-          .from("properties")
-          .update({ status: "booked", availability: "booked" })
-          .eq("id", form.property_id),
-        supabase.from("customers").update({ status: "booked" }).eq("id", form.customer_id),
-      ]);
+                        {/* RIGHT COLUMN: SUMMARY */}
+                        <aside className="border-l border-slate-200 bg-slate-50/80 p-6 overflow-y-auto shadow-[-5px_0_15px_-10px_rgba(0,0,0,0.05)] z-0">
+                            <div className="space-y-6">
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-800 tracking-tight">Booking Summary</h3>
+                                    <p className="text-xs font-medium text-slate-500 mt-1">Review the details before confirming.</p>
+                                </div>
 
-      const invoice: InvoiceData = {
-        customer_name: selectedCustomer?.full_name || "N/A",
-        address: selectedCustomer?.address || "N/A",
-        invoice_no: bookingCode,
-        date: new Date(form.booking_date).toLocaleDateString("en-IN"),
-        property_title: selectedProperty?.title || "N/A",
-        executive_name: selectedExecutive?.name || "N/A",
-        token: tokenAmount,
-        brokerage: brokerageAmount,
-        due: balanceAmount,
-        total: tokenAmount + brokerageAmount,
-      };
+                                <div className="space-y-3.5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                                    <SummaryRow label="Customer" value={selectedCustomer?.full_name} />
+                                    <SummaryRow label="Property" value={selectedProperty?.title} />
+                                    <SummaryRow label="Executive" value={selectedExecutive?.name} />
+                                    <SummaryRow label="Date" value={form.booking_date ? new Date(form.booking_date).toLocaleDateString('en-GB') : "-"} icon={<CalendarDays className="h-4 w-4" />} />
+                                </div>
 
-      setInvoiceData(invoice);
+                                <div className="space-y-3.5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                                    <SummaryRow label="Final Value" value={money(finalValue)} strong />
+                                    <SummaryRow label="Token Paid" value={money(tokenPaid)} textClass="text-emerald-600 font-bold" />
+                                    <div className="border-t border-slate-100 my-2 pt-2">
+                                        <SummaryRow label="Balance Due" value={money(balanceDue)} textClass="text-rose-600 font-black text-lg" />
+                                    </div>
+                                </div>
 
-      setTimeout(async () => {
-        await downloadInvoice(invoice);
-        toast.success("Booking created and invoice generated");
-        onSuccess();
-        resetState();
-        onClose();
-      }, 250);
-    } catch (error) {
-      console.error(error);
-      toast.error(getErrorMessage(error));
-    } finally {
-      setLoading(false);
-    }
-  };
+                                <div className="space-y-3.5 rounded-2xl border border-indigo-100 bg-indigo-50/30 p-5 shadow-sm">
+                                    <SummaryRow label="Est. Brokerage" value={`${money(brokerageAmount)} (${form.brokerage_percent || 0}%)`} textClass="text-indigo-600 font-bold" />
+                                    <SummaryRow label="Brokerage Status" value={form.brokerage_given === 'yes' ? 'Received' : 'Receivable'} textClass={form.brokerage_given === 'yes' ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"} />
+                                    {form.brokerage_given === 'yes' && (
+                                        <SummaryRow label="Amount Received" value={money(form.brokerage_received_amount)} textClass="text-emerald-700 font-black" />
+                                    )}
+                                </div>
 
-  const stepState = [
-    { label: "Customer", done: !!form.customer_id },
-    { label: "Property", done: !!form.property_id },
-    { label: "Executive", done: !!form.assigned_to },
-    { label: "Payment", done: tokenAmount > 0 && totalAmount > 0 },
-  ];
-
-  return (
-    <ProfessionalDialog
-      open={open}
-      onOpenChange={handleOpenChange}
-      title="Create New Booking"
-      description="Convert a qualified customer and shortlisted property into a tracked sale with payment milestones."
-      className="sm:max-w-[980px] w-[96vw]"
-      contentClassName="p-0"
-      footer={
-        <>
-          <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={loading}>
-            Cancel
-          </Button>
-          <Button type="button" onClick={handleSubmit} disabled={loading || loadingOptions}>
-            {loading ? "Creating Booking..." : "Create Booking"}
-          </Button>
-        </>
-      }
-    >
-      <div className="grid h-[72vh] grid-cols-1 overflow-hidden lg:grid-cols-[1fr_340px]">
-        {/* Left */}
-        <div className="overflow-y-auto px-6 py-5">
-          <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-            {stepState.map((step, index) => (
-              <div
-                key={step.label}
-                className={cn(
-                  "rounded-xl border px-3 py-2 text-sm",
-                  step.done ? "border-success/30 bg-success/10 text-success" : "bg-muted/30 text-muted-foreground"
+                                <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-xs font-medium text-blue-800 leading-relaxed shadow-sm">
+                                    <div className="mb-2.5 flex items-center gap-2 font-bold text-blue-900 text-sm">
+                                        <ShieldCheck className="h-4 w-4" /> System Actions
+                                    </div>
+                                    <ul className="list-disc list-inside space-y-1.5 ml-1">
+                                        <li>Booking record is generated.</li>
+                                        <li>Property status locked to 'Sold'.</li>
+                                        {tokenPaid > 0 && <li>Token amount saved to Payments Ledger.</li>}
+                                    </ul>
+                                </div>
+                            </div>
+                        </aside>
+                    </div>
                 )}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-background text-xs font-semibold">
-                    {step.done ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
-                  </span>
-                  {step.label}
-                </div>
-              </div>
-            ))}
-          </div>
 
-          <div className="space-y-6">
-            <section className="rounded-2xl border p-4">
-              <div className="mb-4 flex items-center gap-2">
-                <UserRound className="h-5 w-5 text-primary" />
-                <h3 className="font-semibold">Customer & Property</h3>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Customer</Label>
-                  <Select value={form.customer_id} onValueChange={(value) => void handleCustomerChange(value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={loadingOptions ? "Loading customers..." : "Select customer"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {customers.map((customer) => (
-                        <SelectItem key={customer.id} value={customer.id}>
-                          {customer.full_name} {customer.phone ? `- ${customer.phone}` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Shortlisted Property</Label>
-                  <Select
-                    value={form.property_id}
-                    onValueChange={(value) => void handlePropertyChange(value)}
-                    disabled={!form.customer_id || filteredProperties.length === 0}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={
-                          !form.customer_id
-                            ? "Select customer first"
-                            : filteredProperties.length === 0
-                              ? "No active shortlisted properties"
-                              : "Select property"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {filteredProperties.map((property) => (
-                        <SelectItem key={property.id} value={property.id}>
-                          {property.title} {property.price ? `- ${money(property.price)}` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Sales Executive</Label>
-                  <Select
-                    value={form.assigned_to}
-                    onValueChange={(value) => updateForm("assigned_to", value)}
-                    disabled={!form.property_id || zoneEmployees.length === 0}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={
-                          !form.property_id
-                            ? "Select property first"
-                            : zoneEmployees.length === 0
-                              ? "No active zone executives"
-                              : "Select executive"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {zoneEmployees.map((employee) => (
-                        <SelectItem key={employee.id} value={employee.id}>
-                          {employee.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Booking Date</Label>
-                  <Input
-                    type="date"
-                    value={form.booking_date}
-                    onChange={(event) => updateForm("booking_date", event.target.value)}
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border p-4">
-              <div className="mb-4 flex items-center gap-2">
-                <IndianRupee className="h-5 w-5 text-primary" />
-                <h3 className="font-semibold">Commercial Terms</h3>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Listed / Property Value</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={form.total_amount}
-                    placeholder="Enter listed value"
-                    onChange={(event) => updateForm("total_amount", event.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Final Negotiated Value</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={form.negotiable_amount}
-                    placeholder="Optional, if different from listed value"
-                    onChange={(event) => updateForm("negotiable_amount", event.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Token Paid Now</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={form.token_amount}
-                    placeholder={`Minimum ${money(minimumInitialPayment)}`}
-                    onChange={(event) => updateForm("token_amount", event.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Brokerage %</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    value={form.brokerage_percent}
-                    onChange={(event) => updateForm("brokerage_percent", event.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Agreement Timeline</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={form.agreement_duration_days}
-                    onChange={(event) => updateForm("agreement_duration_days", event.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Brokerage Received?</Label>
-                  <Select value={form.brokerage_given} onValueChange={(value) => updateForm("brokerage_given", value as "yes" | "no")}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="no">No, mark as receivable</SelectItem>
-                      <SelectItem value="yes">Yes, received</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Internal Notes</Label>
-                  <Textarea
-                    value={form.notes}
-                    placeholder="Payment mode, promised documents, special terms, etc."
-                    onChange={(event) => updateForm("notes", event.target.value)}
-                  />
-                </div>
-              </div>
-            </section>
-          </div>
-        </div>
-        
-        {/* Right */}
-        <aside className="border-t bg-muted/20 p-5 lg:border-l lg:border-t-0 overflow-y-auto">
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-lg font-semibold">Booking Summary</h3>
-              <p className="text-sm text-muted-foreground">Review before creating the booking.</p>
-            </div>
-
-            <div className="space-y-3 rounded-2xl border bg-background p-4 text-sm">
-              <SummaryRow label="Customer" value={selectedCustomer?.full_name || "-"} />
-              <SummaryRow label="Property" value={selectedProperty?.title || "-"} />
-              <SummaryRow label="Executive" value={selectedExecutive?.name || "-"} />
-              <SummaryRow label="Booking Date" value={form.booking_date || "-"} icon={<CalendarDays className="h-4 w-4" />} />
-            </div>
-
-            <div className="space-y-3 rounded-2xl border bg-background p-4 text-sm">
-              <SummaryRow label="Final Value" value={money(totalAmount)} strong />
-              <SummaryRow label="Token Paid" value={money(tokenAmount)} />
-              <SummaryRow label="Initial Payment" value={money(initialPayment)} />
-              <SummaryRow label="Balance Due" value={money(balanceAmount)} />
-              <SummaryRow label="Brokerage" value={`${money(brokerageAmount)} (${brokeragePercent || 0}%)`} />
-            </div>
-
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              <div className="mb-2 flex items-center gap-2 font-medium">
-                <FileText className="h-4 w-4" />
-                Real-life actions on save
-              </div>
-              <p>The booking is created, payment milestones are added, the property is marked booked, and an invoice PDF is downloaded.</p>
-            </div>
-          </div>
-        </aside>
-      </div>
-
-      <div className="fixed -left-[9999px] top-0">
-        {invoiceData ? (
-          <div ref={invoiceRef}>
-            <InvoiceTemplate booking={invoiceData} currentPayment={null} />
-          </div>
-        ) : null}
-      </div>
-    </ProfessionalDialog>
-  );
-}
-
-function SummaryRow({
-  label,
-  value,
-  strong,
-  icon,
-}: {
-  label: string;
-  value: string | number | null | undefined;
-  strong?: boolean;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="flex items-center gap-1 text-muted-foreground">
-        {icon}
-        {label}
-      </span>
-      <span className={cn("text-right", strong && "font-semibold text-foreground")}>{value ?? "-"}</span>
-    </div>
-  );
-}
-
-type InvoiceData = {
-  customer_name: string;
-  address: string;
-  invoice_no: string;
-  date: string;
-  property_title: string;
-  executive_name: string;
-  token: number;
-  brokerage: number;
-  due: number;
-  total: number;
+                {/* FOOTER */}
+                <DialogFooter className="bg-white border-t px-6 py-4 shrink-0 z-20 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.05)] flex items-center justify-end gap-3">
+                    <Button type="button" variant="outline" onClick={handleModalClose} disabled={saving} className="h-11 px-6 font-semibold">
+                        Cancel
+                    </Button>
+                    <Button type="button" onClick={handleSubmit} disabled={saving || loadingData} className="bg-indigo-600 hover:bg-indigo-700 text-white h-11 px-8 shadow-md font-bold text-sm">
+                        {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Processing...</> : <><Save className="mr-2 h-4 w-4"/> Confirm & Create Booking</>}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
 };
+
+// Sub-component for Right Sidebar
+function SummaryRow({ label, value, strong, icon, textClass }: { label: string; value: string | number | null | undefined; strong?: boolean; icon?: React.ReactNode; textClass?: string }) {
+    return (
+        <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="flex items-center gap-1.5 text-slate-500 font-medium">
+                {icon}
+                {label}
+            </span>
+            <span className={`text-right ${strong ? "font-bold text-slate-800" : "text-slate-700"} ${textClass || ""}`}>
+                {value || "-"}
+            </span>
+        </div>
+    );
+}
+
+export default NewBookingModal;

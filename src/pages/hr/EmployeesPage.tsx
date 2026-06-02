@@ -119,16 +119,7 @@ export default function EmployeesPage() {
 
             {/* TABLE */}
 
-            <EmployeeTable
-
-                onViewEmployee={
-                    handleView
-                }
-
-                onPayroll={
-                    handlePayroll
-                }
-            />
+            <EmployeeTable />
 
             {/* VIEW */}
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -10,6 +10,8 @@ import { CheckCircle, Download, Loader2, Edit, Zap, IndianRupee, PieChart, Bankn
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useReactToPrint } from "react-to-print";
+import { PayslipTemplate } from "./PayslipTemplate";
 
 export const PayrollTab = () => {
     const { payrolls, loading, fetchPayrolls, generateBulkPayroll, updatePayroll, approvePayroll } = usePayroll();
@@ -22,6 +24,10 @@ export const PayrollTab = () => {
     const [editModal, setEditModal] = useState(false);
     const [selectedPayroll, setSelectedPayroll] = useState<any>(null);
     const [adjustments, setAdjustments] = useState({ leave_deduction: 0, net_salary: 0 });
+
+    const printRef = useRef<HTMLDivElement>(null);
+    const [printData, setPrintData] = useState<any>(null);
+    const [printTrigger, setPrintTrigger] = useState(0);
 
     useEffect(() => { 
         fetchPayrolls(undefined, Number(month), Number(year)); 
@@ -86,14 +92,48 @@ export const PayrollTab = () => {
         }
     };
 
+    const handlePrintAction = useReactToPrint({
+        contentRef: printRef,
+        content: () => printRef.current,
+        documentTitle: `Payslip_${printData?.employee?.name || 'Employee'}_${monthsList.find(m => m.value === month)?.label}_${year}`,
+        pageStyle: "@page { size: auto; margin: 0mm; } @media print { body { -webkit-print-color-adjust: exact; } }",
+    } as any);
+
+    useEffect(() => {
+        if (printTrigger > 0) {
+            const timer = setTimeout(() => {
+                if (printRef.current) {
+                    handlePrintAction();
+                }
+            }, 300);
+            return () => clearTimeout(timer);
+        }
+    }, [printTrigger]);
+
     const handleDownload = (payroll: any) => {
-        window.print();
+        const formattedPayroll = {
+            ...payroll,
+            employee: payroll.employees
+        };
+        
+        setPrintData(formattedPayroll);
+        setPrintTrigger(prev => prev + 1);
+    };
+
+    // ৩ দিনের এডিট লজিক চেক করার জন্য হেল্পার ফাংশন
+    const canEditPayroll = (createdAt: string) => {
+        if (!createdAt) return true;
+        const generateDate = new Date(createdAt);
+        const today = new Date();
+        const diffInMs = today.getTime() - generateDate.getTime();
+        const diffInDays = diffInMs / (1000 * 60 * 60 * 24);
+        return diffInDays <= 3; // ৩ দিন বা তার কম হলে true রিটার্ন করবে
     };
 
     return (
         <div className="space-y-6">
             
-            {/* Dashboard Cards - FULL WIDTH */}
+            {/* Dashboard Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full">
                 <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4">
                     <div className="p-3 bg-blue-50 rounded-lg text-blue-600"><Banknote className="h-5 w-5"/></div>
@@ -163,11 +203,34 @@ export const PayrollTab = () => {
                                         <div className="flex justify-end gap-1.5">
                                             {p.payroll_status === "processed" && (
                                                 <>
-                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-orange-500 hover:bg-orange-50" onClick={() => openEdit(p)} title="Adjust Leaves"><Edit className="h-4 w-4" /></Button>
-                                                    <Button size="sm" variant="outline" className="h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50 shadow-sm" onClick={() => approvePayroll(p.id)}><CheckCircle className="h-4 w-4 mr-1" /> Approve</Button>
+                                                    {/* এডিট বাটন - ৩ দিনের লজিক অ্যাড করা হলো */}
+                                                    <Button 
+                                                        size="icon" 
+                                                        variant="ghost" 
+                                                        className="h-8 w-8 text-orange-500 hover:bg-orange-50 disabled:opacity-30 disabled:hover:bg-transparent" 
+                                                        onClick={() => openEdit(p)} 
+                                                        title={canEditPayroll(p.created_at) ? "Adjust Leaves" : "Edit time expired (3 days passed)"}
+                                                        disabled={!canEditPayroll(p.created_at)}
+                                                    >
+                                                        <Edit className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button size="sm" variant="outline" className="h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50 shadow-sm" onClick={() => approvePayroll(p.id)}>
+                                                        <CheckCircle className="h-4 w-4 mr-1" /> Approve
+                                                    </Button>
                                                 </>
                                             )}
-                                            <Button size="sm" variant="secondary" className="h-8 bg-slate-100 hover:bg-slate-200 text-slate-700 shadow-sm" onClick={() => handleDownload(p)} title="Download Payslip PDF"><Download className="h-4 w-4 mr-1" /> Slip</Button>
+                                            
+                                            {/* ডাউনলোড স্লিপ বাটন - Approve না হওয়া পর্যন্ত disabled থাকবে */}
+                                            <Button 
+                                                size="sm" 
+                                                variant="secondary" 
+                                                className="h-8 bg-slate-100 hover:bg-slate-200 text-slate-700 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed" 
+                                                onClick={() => handleDownload(p)} 
+                                                title={p.payroll_status === "processed" ? "Approve the payroll first to download slip" : "Download Payslip PDF"}
+                                                disabled={p.payroll_status === "processed"} // 'processed' মানে পেন্ডিং, তাই disabled
+                                            >
+                                                <Download className="h-4 w-4 mr-1" /> Slip
+                                            </Button>
                                         </div>
                                     </TableCell>
                                 </TableRow>
@@ -204,6 +267,18 @@ export const PayrollTab = () => {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            <div className="hidden">
+                <div ref={printRef}>
+                    {printData && (
+                        <PayslipTemplate 
+                            payroll={printData} 
+                            employee={printData.employee} 
+                        />
+                    )}
+                </div>
+            </div>
+
         </div>
     );
 };

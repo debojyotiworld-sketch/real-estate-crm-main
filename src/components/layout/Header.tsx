@@ -1,4 +1,6 @@
-import { Bell, LogOut, User, ChevronDown, Menu, Eye, EyeOff, CalendarDays } from "lucide-react";
+import { 
+  Bell, LogOut, User, ChevronDown, Menu, Eye, EyeOff, CalendarDays, Search 
+} from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -106,7 +108,6 @@ export function ChangePasswordDialog({
     setPassword("");
     setConfirmPassword("");
     onOpenChange(false);
-
   };
 
   return (
@@ -164,10 +165,11 @@ export function ChangePasswordDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
-
     </Dialog>
   );
 }
+
+/* ================= HEADER COMPONENT ================= */
 
 export function Header({
   title,
@@ -180,6 +182,7 @@ export function Header({
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileData, setProfileData] = useState<HeaderUser | null>(null);
   const displayUser = user as HeaderUser | null;
+  
   const todayLabel = new Date().toLocaleDateString("en-IN", {
     day: "numeric",
     month: "short",
@@ -196,7 +199,6 @@ export function Header({
       .slice(0, 2);
 
   const handleOpenProfile = async () => {
-    
     setProfileData(null);
     setProfileOpen(true);
 
@@ -223,10 +225,11 @@ export function Header({
   };
 
   return (
-    <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 backdrop-blur-xl">
+    <header className="sticky top-0 z-30 border-b border-border/40 bg-background/60 backdrop-blur-xl shadow-sm">
       <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3 md:px-6">
-        {/* Left */}
-        <div className="flex min-w-0 items-center gap-3">
+        
+        {/* Left Section */}
+        <div className="flex min-w-0 items-center gap-3 md:w-1/3">
           {isMobile && (
             <Button
               variant="ghost"
@@ -238,7 +241,7 @@ export function Header({
           )}
 
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-bold text-foreground md:text-2xl">
+            <h1 className="truncate text-xl font-bold text-foreground md:text-2xl tracking-tight">
               {title}
             </h1>
             {subtitle && (
@@ -249,9 +252,22 @@ export function Header({
           </div>
         </div>
 
-        {/* Right */}
-        <div className="flex shrink-0 items-center gap-2 md:gap-3">
-          <div className="hidden items-center gap-2 rounded-lg border bg-card/80 px-3 py-2 text-sm text-muted-foreground shadow-sm md:flex">
+        {/* Middle Section - Search Bar (Hidden on small screens) */}
+        <div className="hidden flex-1 items-center justify-center px-4 md:flex max-w-md w-full">
+          <div className="relative w-full group">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-primary" />
+            <Input
+              type="search"
+              placeholder="Search anything..."
+              className="w-full rounded-full bg-muted/40 pl-10 pr-4 transition-all focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-primary/20"
+            />
+          </div>
+        </div>
+
+        {/* Right Section */}
+        <div className="flex shrink-0 items-center justify-end gap-2 md:gap-4 md:w-1/3">
+          
+          <div className="hidden items-center gap-2 rounded-full border border-border/50 bg-card/50 px-4 py-1.5 text-sm font-medium text-muted-foreground shadow-sm md:flex backdrop-blur-sm">
             <CalendarDays className="h-4 w-4" />
             <span>{todayLabel}</span>
           </div>
@@ -259,20 +275,21 @@ export function Header({
           {/* Notifications */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className="relative bg-card/80">
+              <Button variant="outline" size="icon" className="relative bg-card/50 rounded-full hover:bg-muted transition-colors border-border/50">
                 <Bell className="w-5 h-5" />
-                <Badge className="absolute -right-1 -top-1 h-5 w-5 justify-center border-background bg-destructive p-0 text-[10px]">
-                  5
-                </Badge>
+                <span className="absolute right-1 top-1 flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75"></span>
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-destructive"></span>
+                </span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72">
-              <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+            <DropdownMenuContent align="end" className="w-80 rounded-xl p-2">
+              <DropdownMenuLabel className="font-semibold text-base px-2">Notifications</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {["New lead assigned", "Site visit scheduled", "Payment follow-up due"].map((item) => (
-                <DropdownMenuItem key={item} className="rounded-md py-3">
-                  <div>
-                    <p className="text-sm font-medium">{item}</p>
+              {["New lead assigned to you", "Site visit scheduled for tomorrow", "Payment follow-up due"].map((item, i) => (
+                <DropdownMenuItem key={i} className="rounded-lg p-3 my-1 cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-medium leading-none">{item}</p>
                     <p className="text-xs text-muted-foreground">Review from your dashboard</p>
                   </div>
                 </DropdownMenuItem>
@@ -280,61 +297,52 @@ export function Header({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* User menu */}
+          {/* User Profile Menu */}
           {displayUser && (
             <>
-              <DropdownMenu><DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="
-                    h-10 rounded-lg bg-card/80 px-2 gap-2 shadow-sm
-                    transition-colors
-                    hover:bg-muted
-                    data-[state=open]:bg-muted
-                    min-w-0 max-w-[280px]
-                  "
-                >
-                  <Avatar className="h-8 w-8 shrink-0">
-                    <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
-                      {getInitials(displayUser.name ?? "")}
-                    </AvatarFallback>
-                  </Avatar>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="h-10 rounded-full border border-border/50 bg-card/50 px-1.5 gap-2 shadow-sm transition-all hover:bg-muted data-[state=open]:bg-muted min-w-0 max-w-[280px]"
+                  >
+                    <Avatar className="h-8 w-8 shrink-0">
+                      <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
+                        {getInitials(displayUser.name ?? "")}
+                      </AvatarFallback>
+                    </Avatar>
 
-                  <div className="hidden lg:flex items-center gap-2 min-w-0 max-w-[200px]">
-                    <span className="text-sm font-medium truncate text-foreground">
-                      {displayUser.name}
-                    </span>
-                  </div>
-
-                  <ChevronDown className="h-4 w-4 opacity-60 shrink-0" />
-                </Button>
-
-              </DropdownMenuTrigger>
+                    <div className="hidden lg:flex items-center gap-2 min-w-0 pr-2">
+                      <span className="text-sm font-semibold truncate text-foreground">
+                        {displayUser.name}
+                      </span>
+                      <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+                    </div>
+                  </Button>
+                </DropdownMenuTrigger>
 
                 <DropdownMenuContent
                   align="end"
-                  className="w-64 p-0 overflow-hidden"
+                  className="w-72 p-0 overflow-hidden rounded-xl border-border/50 shadow-lg"
                 >
-                  <DropdownMenuLabel className="p-0">
+                  <DropdownMenuLabel className="p-0 bg-muted/30">
                     <div className="flex items-center gap-3 p-4">
-                      <Avatar className="h-10 w-10 shrink-0">
-                        <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
+                      <Avatar className="h-12 w-12 shrink-0 border-2 border-background shadow-sm">
+                        <AvatarFallback className="bg-primary text-primary-foreground text-sm font-bold">
                           {getInitials(displayUser.name ?? "")}
                         </AvatarFallback>
                       </Avatar>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold truncate">
-                            {displayUser.name}
-                          </p>
-                        </div>
+                        <p className="text-base font-bold truncate text-foreground">
+                          {displayUser.name}
+                        </p>
                         {displayUser.employee_code && (
-                          <p className="text-xs text-muted-foreground truncate">
-                            {displayUser.employee_code}
+                          <p className="text-xs font-medium text-muted-foreground truncate mb-1">
+                            ID: {displayUser.employee_code}
                           </p>
                         )}
                         {displayUser.role && (
-                          <Badge className="h-5 px-2 text-[11px] font-medium shrink-0">
+                          <Badge variant="secondary" className="h-5 px-2 text-[10px] font-bold shrink-0 tracking-wider">
                             {String(displayUser.role).toUpperCase()}
                           </Badge>
                         )}
@@ -342,28 +350,28 @@ export function Header({
                     </div>
                   </DropdownMenuLabel>
 
-                  <DropdownMenuSeparator />
+                  <DropdownMenuSeparator className="m-0" />
 
-                  <div className="p-2">
-                    <DropdownMenuItem className="rounded-md" onClick={handleOpenProfile}>
-                      <User className="w-4 h-4 mr-2 opacity-80" />
-                      View Profile
+                  <div className="p-2 space-y-1">
+                    <DropdownMenuItem className="rounded-lg p-2.5 cursor-pointer" onClick={handleOpenProfile}>
+                      <User className="w-4 h-4 mr-3 text-muted-foreground" />
+                      <span className="font-medium">View Profile</span>
                     </DropdownMenuItem>
-                    <DropdownMenuItem className="rounded-md" onClick={() => setPasswordOpen(true)}>
-                      <User className="w-4 h-4 mr-2 opacity-80" />
-                      Change Password
+                    <DropdownMenuItem className="rounded-lg p-2.5 cursor-pointer" onClick={() => setPasswordOpen(true)}>
+                      <User className="w-4 h-4 mr-3 text-muted-foreground" />
+                      <span className="font-medium">Change Password</span>
                     </DropdownMenuItem>
                   </div>
 
-                  <DropdownMenuSeparator />
+                  <DropdownMenuSeparator className="m-0" />
 
                   <div className="p-2">
                     <DropdownMenuItem
                       onClick={logout}
-                      className="rounded-md text-destructive"
+                      className="rounded-lg p-2.5 cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10"
                     >
-                      <LogOut className="w-4 h-4 mr-2" />
-                      Sign Out
+                      <LogOut className="w-4 h-4 mr-3" />
+                      <span className="font-medium">Sign Out</span>
                     </DropdownMenuItem>
                   </div>
                 </DropdownMenuContent>
