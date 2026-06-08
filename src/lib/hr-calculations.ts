@@ -81,15 +81,16 @@ export const calculateTotalDeductions = (
         professional_tax: number;
         tds: number;
         other_deductions: number;
+        advance_deduction?: number; // Optional param added
     }
 ) => {
-
     return round2(
         values.pf +
         values.esi +
         values.professional_tax +
         values.tds +
-        values.other_deductions
+        values.other_deductions +
+        (values.advance_deduction || 0)
     );
 };
 

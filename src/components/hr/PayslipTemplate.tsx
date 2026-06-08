@@ -3,12 +3,10 @@ import React from "react";
 interface PayslipProps {
   employee: any; 
   payroll: any;
-   
 }
 
 export const PayslipTemplate: React.FC<PayslipProps> = ({ employee, payroll }) => {
   return (
-    // 'print:block' এবং 'hidden' এর ব্যবহার খুব জরুরি। এটি শুধু প্রিন্ট করার সময় শো করবে।
     <div id="printable-payslip" className="bg-white p-8 w-full max-w-4xl mx-auto text-black font-sans text-sm">
       
       <div className="border-2 border-black">
@@ -57,6 +55,14 @@ export const PayslipTemplate: React.FC<PayslipProps> = ({ employee, payroll }) =
               <div className="flex justify-between"><span>Provident Fund (PF)</span><span>{payroll?.pf_deduction || 0}</span></div>
               <div className="flex justify-between"><span>ESI</span><span>{payroll?.esi_deduction || 0}</span></div>
               <div className="flex justify-between text-red-600"><span>Leave Penalty / LOP</span><span>{payroll?.leave_deduction || 0}</span></div>
+              
+              {/* +++ UPDATED: Advance Deduction Row +++ */}
+              {Number(payroll?.advance_deduction || 0) > 0 && (
+                <div className="flex justify-between text-orange-600 font-medium">
+                  <span>Advance Deduction</span>
+                  <span>- {payroll?.advance_deduction}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { getMonthDateRange, calculatePerDaySalary, calculateLopDays, calculateLeaveDeduction } from "@/lib/payroll-utils";
+// Import the new calculateAdvanceDeduction function
+import { getMonthDateRange, calculatePerDaySalary, calculateLopDays, calculateLeaveDeduction, calculateAdvanceDeduction } from "@/lib/payroll-utils";
 
 export const usePayroll = () => {
     const [loading, setLoading] = useState(false);
@@ -10,7 +11,6 @@ export const usePayroll = () => {
     const fetchPayrolls = useCallback(async (employeeId?: string, month?: number, year?: number) => {
         try {
             setLoading(true);
-            // FIX: "employees:employee_id" পরিবর্তন করে শুধু "employees" করা হয়েছে যাতে UI-তে ডাটা পায়
             let query = supabase.from("employee_payrolls" as any).select(`*, employees (name, employee_code, department, designation)`).order("created_at", { ascending: false });
 
             if (employeeId) query = query.eq("employee_id", employeeId);
@@ -36,32 +36,45 @@ export const usePayroll = () => {
         const salary = salaryResponse.data as any;
         if (!salary) return { success: false, error: "Active salary structure missing" };
 
-        // Attendance Date Range & Fetching
         const { startDate, endDate } = getMonthDateRange(payrollMonth, payrollYear);
         const { data: attendance } = await supabase.from("attendance_logs" as any).select("*").eq("employee_id", employeeId).gte("attendance_date", startDate).lte("attendance_date", endDate);
 
-        // 1. Fix Case Sensitivity helper function
         const getStatus = (status: any) => (status || "").toLowerCase();
 
-        // 2. Accurate Attendance Calculation
         const presentDays = (attendance || []).filter((i: any) => getStatus(i.status) === "present" || getStatus(i.status) === "approved").length;
         const lateDays = (attendance || []).filter((i: any) => getStatus(i.status) === "late").length;
 
-        // 3. Smart Absent Calculation (Total Working Days 26 - Present Days)
         const TOTAL_WORKING_DAYS = 26;
         let absentDays = TOTAL_WORKING_DAYS - presentDays;
-        if (absentDays < 0) absentDays = 0; // To prevent negative values if they worked overtime
+        if (absentDays < 0) absentDays = 0; 
 
-        // If you strictly want to count explicit "absent" marks instead, uncomment the next line:
-        // const absentDays = (attendance || []).filter((i: any) => getStatus(i.status) === "absent").length;
-
-        // Deduction & Net Salary Calculation
         const lopDays = calculateLopDays(absentDays, 0, lateDays);
         const grossSalary = Number(salary.gross_salary || 0);
         const perDaySalary = calculatePerDaySalary(grossSalary, TOTAL_WORKING_DAYS);
         const leaveDeduction = calculateLeaveDeduction(perDaySalary, lopDays);
 
-        const totalDeductions = Number(salary.total_deductions || 0) + leaveDeduction;
+        let totalDeductions = Number(salary.total_deductions || 0) + leaveDeduction;
+        let finalSalaryBeforeAdvance = grossSalary - totalDeductions;
+
+        const { data: activeAdvance } = await supabase
+            .from("salary_advances" as any)
+            .select("*")
+            .eq("employee_id", employeeId)
+            .gt("remaining_amount", 0)
+            .maybeSingle();
+
+        let advanceDeductionThisMonth = 0;
+
+        if (activeAdvance) {
+            advanceDeductionThisMonth = calculateAdvanceDeduction(
+                Number(activeAdvance.remaining_amount),
+                activeAdvance.deduction_type,
+                Number(activeAdvance.emi_amount || 0),
+                finalSalaryBeforeAdvance > 0 ? finalSalaryBeforeAdvance : 0 
+            );
+        }
+
+        totalDeductions += advanceDeductionThisMonth;
         const finalSalary = grossSalary - totalDeductions;
 
         const payload = {
@@ -75,10 +88,10 @@ export const usePayroll = () => {
             basic: salary.basic,
             hra: salary.hra,
             gross_salary: grossSalary,
-            // Make sure these field names match your database schema exactly
             pf_deduction: Number(salary.pf_employee_contribution || 0),
             esi_deduction: Number(salary.esi_employee_contribution || 0),
             leave_deduction: leaveDeduction,
+            advance_deduction: advanceDeductionThisMonth, // <--- Make sure this column is in your DB
             total_deductions: totalDeductions,
             net_salary: finalSalary > 0 ? finalSalary : 0,
             payroll_status: "processed"
@@ -86,6 +99,19 @@ export const usePayroll = () => {
 
         const { error: insertError } = await supabase.from("employee_payrolls" as any).insert(payload as any);
         if (insertError) return { success: false, error: insertError.message };
+
+        if (advanceDeductionThisMonth > 0 && activeAdvance) {
+            const newRemaining = Number(activeAdvance.remaining_amount) - advanceDeductionThisMonth;
+            
+            await supabase
+                .from("salary_advances" as any)
+                .update({ 
+                    remaining_amount: newRemaining,
+                    status: newRemaining <= 0 ? 'COMPLETED' : 'ACTIVE' // Update status when fully paid
+                })
+                .eq("id", activeAdvance.id);
+        }
+
         return { success: true };
     };
 
@@ -106,28 +132,33 @@ export const usePayroll = () => {
     };
 
     const generateBulkPayroll = async (employees: any[], payrollMonth: number, payrollYear: number) => {
-        try {
-            setLoading(true);
-            let successCount = 0; let failCount = 0;
+    try {
+        setLoading(true);
+        let successCount = 0; let failCount = 0;
 
-            for (let i = 0; i < employees.length; i += 10) {
-                const batch = employees.slice(i, i + 10);
-                const results = await Promise.all(batch.map(emp => _processPayrollCore(emp.id, payrollMonth, payrollYear)));
-                results.forEach(res => res.success ? successCount++ : failCount++);
+        for (const emp of employees) {
+            const result = await _processPayrollCore(emp.id, payrollMonth, payrollYear);
+            
+            if (result.success) {
+                successCount++;
+            } else {
+                console.error(`Failed for ${emp.name}:`, result.error);
+                failCount++;
             }
-
-            if (successCount > 0) toast.success(`Generated payroll for ${successCount} employees.`);
-            if (failCount > 0) toast.warning(`Skipped ${failCount} employees (already generated or missing setup).`);
-
-            await fetchPayrolls(undefined, payrollMonth, payrollYear);
-            return true;
-        } catch (err) {
-            toast.error("Bulk payroll failed");
-            return false;
-        } finally {
-            setLoading(false);
         }
-    };
+
+        if (successCount > 0) toast.success(`Generated payroll for ${successCount} employees.`);
+        if (failCount > 0) toast.warning(`Skipped ${failCount} employees.`);
+
+        await fetchPayrolls(undefined, payrollMonth, payrollYear);
+        return true;
+    } catch (err) {
+        toast.error("Bulk payroll failed");
+        return false;
+    } finally {
+        setLoading(false);
+    }
+};
 
     const updatePayroll = async (payrollId: string, updates: any) => {
         try {

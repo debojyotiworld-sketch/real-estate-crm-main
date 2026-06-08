@@ -1,7 +1,10 @@
 import { 
-  Bell, LogOut, User, ChevronDown, Menu, Eye, EyeOff, CalendarDays, Search 
+  Bell, LogOut, User, ChevronDown, Menu, Eye, EyeOff, CalendarDays, Search, Clock, Check 
 } from "lucide-react";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { formatDistanceToNow } from "date-fns";
+
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -13,8 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
   DialogContent,
@@ -24,7 +26,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { EmployeeProfileDialog } from "@/components/EmployeeProfileDialog";
+import { useNotifications } from "@/hooks/useNotifications";
 
 /* ================= TYPES ================= */
 
@@ -178,10 +184,21 @@ export function Header({
   onOpenMobileSidebar,
 }: HeaderProps) {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileData, setProfileData] = useState<HeaderUser | null>(null);
+  
   const displayUser = user as HeaderUser | null;
+  
+  // Destructured state from the updated useNotifications hook
+  const { 
+    notifications, 
+    unreadCount = 0, 
+    markAsRead, 
+    markAllAsRead 
+  } = useNotifications();
   
   const todayLabel = new Date().toLocaleDateString("en-IN", {
     day: "numeric",
@@ -213,7 +230,7 @@ export function Header({
           name
         )
       `)
-      .eq("user_id", user?.user_id)
+      .eq("user_id", user?.id)
       .maybeSingle();
 
     if (error) {
@@ -222,6 +239,14 @@ export function Header({
     }
 
     setProfileData(data);
+  };
+
+  // Handles clicking on a notification (Marking read & Navigation)
+  const handleNotificationClick = (id: string, link?: string) => {
+    markAsRead(id);
+    if (link) {
+      navigate(link);
+    }
   };
 
   return (
@@ -252,7 +277,7 @@ export function Header({
           </div>
         </div>
 
-        {/* Middle Section - Search Bar (Hidden on small screens) */}
+        {/* Middle Section - Search Bar */}
         <div className="hidden flex-1 items-center justify-center px-4 md:flex max-w-md w-full">
           <div className="relative w-full group">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-primary" />
@@ -272,32 +297,65 @@ export function Header({
             <span>{todayLabel}</span>
           </div>
 
-          {/* Notifications */}
+          {/* ================= NOTIFICATIONS BELL ================= */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="icon" className="relative bg-card/50 rounded-full hover:bg-muted transition-colors border-border/50">
                 <Bell className="w-5 h-5" />
-                <span className="absolute right-1 top-1 flex h-2.5 w-2.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75"></span>
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-destructive"></span>
-                </span>
+                {unreadCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground animate-in zoom-in shadow-sm border-2 border-background">
+                    {unreadCount}
+                  </span>
+                )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80 rounded-xl p-2">
-              <DropdownMenuLabel className="font-semibold text-base px-2">Notifications</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {["New lead assigned to you", "Site visit scheduled for tomorrow", "Payment follow-up due"].map((item, i) => (
-                <DropdownMenuItem key={i} className="rounded-lg p-3 my-1 cursor-pointer hover:bg-muted/50 transition-colors">
-                  <div className="flex flex-col gap-1">
-                    <p className="text-sm font-medium leading-none">{item}</p>
-                    <p className="text-xs text-muted-foreground">Review from your dashboard</p>
+            
+            <DropdownMenuContent align="end" className="w-80 rounded-xl p-0 overflow-hidden border-border/50 shadow-lg">
+              <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
+                <DropdownMenuLabel className="p-0 font-semibold text-base">Notifications</DropdownMenuLabel>
+                {unreadCount > 0 && markAllAsRead && (
+                  <Button variant="ghost" size="sm" onClick={markAllAsRead} className="h-auto p-0 text-xs text-primary hover:bg-transparent">
+                    <Check className="w-3 h-3 mr-1" /> Mark all read
+                  </Button>
+                )}
+              </div>
+              
+              <ScrollArea className="h-[350px]">
+                {notifications.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full p-6 text-muted-foreground">
+                    <Bell className="w-8 h-8 mb-2 opacity-20" />
+                    <p className="text-sm">No new notifications</p>
                   </div>
-                </DropdownMenuItem>
-              ))}
+                ) : (
+                  <div className="flex flex-col">
+                    {notifications.map((notif: any) => (
+                      <DropdownMenuItem 
+                        key={notif.id} 
+                        className={`flex flex-col items-start px-4 py-3 border-b cursor-pointer hover:bg-muted/50 transition-colors rounded-none outline-none ${!notif.is_read ? 'bg-primary/5' : ''}`}
+                        onClick={() => handleNotificationClick(notif.id, notif.link)}
+                      >
+                        <div className="flex justify-between items-start gap-2 w-full">
+                          <span className={`text-sm font-semibold line-clamp-1 ${!notif.is_read ? 'text-primary' : 'text-foreground'}`}>
+                            {notif.title}
+                          </span>
+                          {!notif.is_read && <div className="w-2 h-2 mt-1.5 bg-primary rounded-full shrink-0" />}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2 w-full whitespace-normal text-left">
+                          {notif.message}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground/70 mt-2 flex items-center">
+                          <Clock className="w-3 h-3 mr-1" />
+                          {notif.created_at ? formatDistanceToNow(new Date(notif.created_at), { addSuffix: true }) : 'Just now'}
+                        </p>
+                      </DropdownMenuItem>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* User Profile Menu */}
+          {/* ================= USER PROFILE MENU ================= */}
           {displayUser && (
             <>
               <DropdownMenu>

@@ -1,37 +1,57 @@
+// src/components/hr/PayrollTab.tsx
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePayroll } from "@/hooks/hr/usePayroll";
 import { useEmployees } from "@/hooks/hr/useEmployees";
-import { CheckCircle, Download, Loader2, Edit, Zap, IndianRupee, PieChart, Banknote, ChevronLeft, ChevronRight } from "lucide-react";
+import { useAdvances } from "@/hooks/hr/useAdvances";
+import { CheckCircle, Download, Loader2, Edit, Zap, IndianRupee, PieChart, Banknote, ChevronLeft, ChevronRight, HandCoins, XCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useReactToPrint } from "react-to-print";
 import { PayslipTemplate } from "./PayslipTemplate";
+import { toast } from "sonner"; // Added for validation error messages
 
 export const PayrollTab = () => {
-    const { payrolls, loading, fetchPayrolls, generateBulkPayroll, updatePayroll, approvePayroll } = usePayroll();
+    const { payrolls, loading: payrollLoading, fetchPayrolls, generateBulkPayroll, updatePayroll, approvePayroll } = usePayroll();
     const { employees } = useEmployees();
+    const { advances, loading: advLoading, fetchAdvances, requestAdvance, updateStatus } = useAdvances();
     
     const currentDate = new Date();
     const [month, setMonth] = useState<string>(String(currentDate.getMonth() + 1));
     const [year, setYear] = useState<string>(String(currentDate.getFullYear()));
     
+    // UI states
+    const [activeTab, setActiveTab] = useState("processing");
     const [editModal, setEditModal] = useState(false);
+    const [advanceModal, setAdvanceModal] = useState(false);
+    
     const [selectedPayroll, setSelectedPayroll] = useState<any>(null);
     const [adjustments, setAdjustments] = useState({ leave_deduction: 0, net_salary: 0 });
+
+    const [advanceForm, setAdvanceForm] = useState({ 
+        employee_id: "", 
+        amount: "", 
+        reason: "",
+        deduction_type: "FULL",
+        emi_amount: ""
+    });
 
     const printRef = useRef<HTMLDivElement>(null);
     const [printData, setPrintData] = useState<any>(null);
     const [printTrigger, setPrintTrigger] = useState(0);
 
+    // Fetch data when month/year changes
     useEffect(() => { 
         fetchPayrolls(undefined, Number(month), Number(year)); 
-    }, [month, year, fetchPayrolls]);
+        fetchAdvances(Number(month), Number(year));
+    }, [month, year, fetchPayrolls, fetchAdvances]);
 
     const monthsList = [
         { value: "1", label: "January" }, { value: "2", label: "February" }, { value: "3", label: "March" },
@@ -40,25 +60,18 @@ export const PayrollTab = () => {
         { value: "10", label: "October" }, { value: "11", label: "November" }, { value: "12", label: "December" },
     ];
 
-    const yearsList = useMemo(() => {
-        const currentY = new Date().getFullYear();
-        return Array.from({ length: 5 }, (_, i) => String(currentY - i));
-    }, []);
+    const yearsList = useMemo(() => Array.from({ length: 5 }, (_, i) => String(currentDate.getFullYear() - i)), []);
 
     const handlePrevMonth = () => {
-        let m = parseInt(month);
-        let y = parseInt(year);
+        let m = parseInt(month); let y = parseInt(year);
         if (m === 1) { m = 12; y -= 1; } else { m -= 1; }
-        setMonth(String(m));
-        setYear(String(y));
+        setMonth(String(m)); setYear(String(y));
     };
 
     const handleNextMonth = () => {
-        let m = parseInt(month);
-        let y = parseInt(year);
+        let m = parseInt(month); let y = parseInt(year);
         if (m === 12) { m = 1; y += 1; } else { m += 1; }
-        setMonth(String(m));
-        setYear(String(y));
+        setMonth(String(m)); setYear(String(y));
     };
 
     const metrics = useMemo(() => {
@@ -86,160 +99,286 @@ export const PayrollTab = () => {
 
     const saveAdjustment = async () => {
         const success = await updatePayroll(selectedPayroll.id, { leave_deduction: adjustments.leave_deduction, net_salary: adjustments.net_salary });
-        if (success) { 
-            setEditModal(false); 
-            fetchPayrolls(undefined, Number(month), Number(year)); 
+        if (success) { setEditModal(false); fetchPayrolls(undefined, Number(month), Number(year)); }
+    };
+
+    const handleAdvanceSubmit = async () => {
+        if (!advanceForm.employee_id || !advanceForm.amount) return;
+
+        if (advanceForm.deduction_type === "EMI" && (!advanceForm.emi_amount || Number(advanceForm.emi_amount) <= 0)) {
+            toast.error("Please enter a valid EMI amount");
+            return;
+        }
+
+        const success = await requestAdvance({
+            employee_id: advanceForm.employee_id,
+            amount: Number(advanceForm.amount),
+            target_month: Number(month),
+            target_year: Number(year),
+            reason: advanceForm.reason,
+            deduction_type: advanceForm.deduction_type,
+            emi_amount: advanceForm.deduction_type === "EMI" ? Number(advanceForm.emi_amount) : 0,
+            remaining_amount: Number(advanceForm.amount) // Keeping remaining_amount synced initially
+        });
+
+        if (success) {
+            setAdvanceModal(false);
+            setAdvanceForm({ employee_id: "", amount: "", reason: "", deduction_type: "FULL", emi_amount: "" });
+            toast.success("Advance request submitted!");
         }
     };
 
     const handlePrintAction = useReactToPrint({
         contentRef: printRef,
         content: () => printRef.current,
-        documentTitle: `Payslip_${printData?.employee?.name || 'Employee'}_${monthsList.find(m => m.value === month)?.label}_${year}`,
-        pageStyle: "@page { size: auto; margin: 0mm; } @media print { body { -webkit-print-color-adjust: exact; } }",
+        documentTitle: `Payslip_${printData?.employee?.name || 'Employee'}_${month}_${year}`,
     } as any);
 
     useEffect(() => {
         if (printTrigger > 0) {
-            const timer = setTimeout(() => {
-                if (printRef.current) {
-                    handlePrintAction();
-                }
-            }, 300);
+            const timer = setTimeout(() => { if (printRef.current) handlePrintAction(); }, 300);
             return () => clearTimeout(timer);
         }
     }, [printTrigger]);
 
     const handleDownload = (payroll: any) => {
-        const formattedPayroll = {
-            ...payroll,
-            employee: payroll.employees
-        };
-        
-        setPrintData(formattedPayroll);
+        setPrintData({ ...payroll, employee: payroll.employees });
         setPrintTrigger(prev => prev + 1);
     };
 
-    // ৩ দিনের এডিট লজিক চেক করার জন্য হেল্পার ফাংশন
     const canEditPayroll = (createdAt: string) => {
         if (!createdAt) return true;
-        const generateDate = new Date(createdAt);
-        const today = new Date();
-        const diffInMs = today.getTime() - generateDate.getTime();
-        const diffInDays = diffInMs / (1000 * 60 * 60 * 24);
-        return diffInDays <= 3; // ৩ দিন বা তার কম হলে true রিটার্ন করবে
+        const diffInDays = (new Date().getTime() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24);
+        return diffInDays <= 3;
     };
 
     return (
         <div className="space-y-6">
             
-            {/* Dashboard Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full">
-                <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4">
-                    <div className="p-3 bg-blue-50 rounded-lg text-blue-600"><Banknote className="h-5 w-5"/></div>
-                    <div><p className="text-[10px] font-bold text-muted-foreground uppercase">Total Company CTC</p><h3 className="text-xl font-bold">₹{metrics.totalCTC.toLocaleString()}</h3></div>
-                </CardContent></Card>
-                <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4">
-                    <div className="p-3 bg-red-50 rounded-lg text-red-600"><PieChart className="h-5 w-5"/></div>
-                    <div><p className="text-[10px] font-bold text-muted-foreground uppercase">Total Deductions</p><h3 className="text-xl font-bold text-red-600">₹{metrics.totalDeduct.toLocaleString()}</h3></div>
-                </CardContent></Card>
-                <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4">
-                    <div className="p-3 bg-emerald-50 rounded-lg text-emerald-600"><IndianRupee className="h-5 w-5"/></div>
-                    <div><p className="text-[10px] font-bold text-muted-foreground uppercase">Total Net Payout</p><h3 className="text-xl font-bold text-emerald-600">₹{metrics.totalNet.toLocaleString()}</h3></div>
-                </CardContent></Card>
-                <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4">
-                    <div className="p-3 bg-amber-50 rounded-lg text-amber-600"><CheckCircle className="h-5 w-5"/></div>
-                    <div><p className="text-[10px] font-bold text-muted-foreground uppercase">Pending Approvals</p><h3 className="text-xl font-bold">{metrics.pending} / {metrics.processed}</h3></div>
-                </CardContent></Card>
-            </div>
-
-            {/* Top Controls */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div className="flex items-center bg-white p-1.5 rounded-xl border shadow-sm">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-slate-900" onClick={handlePrevMonth}><ChevronLeft className="h-4 w-4" /></Button>
-                    <div className="flex items-center gap-2 px-2">
-                        <Select value={month} onValueChange={setMonth}><SelectTrigger className="w-[130px] h-8 border-none shadow-none font-medium text-slate-700 bg-slate-50/50"><SelectValue /></SelectTrigger><SelectContent>{monthsList.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent></Select>
-                        <Select value={year} onValueChange={setYear}><SelectTrigger className="w-[85px] h-8 border-none shadow-none font-medium text-slate-700 bg-slate-50/50"><SelectValue /></SelectTrigger><SelectContent>{yearsList.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent></Select>
+            {/* Top Period Selector */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl border shadow-sm">
+                <div className="flex items-center gap-4">
+                    <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><Banknote className="h-5 w-5" /></div>
+                    <div>
+                        <h2 className="text-lg font-bold text-slate-800">Payroll Management</h2>
+                        <p className="text-sm text-slate-500">Manage monthly salaries and advances</p>
                     </div>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-slate-900" onClick={handleNextMonth}><ChevronRight className="h-4 w-4" /></Button>
                 </div>
-                <Button onClick={handleBulkRun} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-md">
-                    <Zap className="h-4 w-4 mr-2" /> Run Company Payroll
-                </Button>
+                <div className="flex items-center bg-slate-50 p-1.5 rounded-lg border">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500" onClick={handlePrevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+                    <div className="flex items-center gap-2 px-2">
+                        <Select value={month} onValueChange={setMonth}><SelectTrigger className="w-[120px] h-8 border-none bg-transparent shadow-none font-semibold text-slate-700"><SelectValue /></SelectTrigger><SelectContent>{monthsList.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent></Select>
+                        <Select value={year} onValueChange={setYear}><SelectTrigger className="w-[80px] h-8 border-none bg-transparent shadow-none font-semibold text-slate-700"><SelectValue /></SelectTrigger><SelectContent>{yearsList.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent></Select>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500" onClick={handleNextMonth}><ChevronRight className="h-4 w-4" /></Button>
+                </div>
             </div>
 
-            {/* Data Table */}
-            <Card className="border-0 shadow-sm rounded-xl overflow-hidden bg-white">
-                <CardContent className="p-0">
-                    <Table>
-                        <TableHeader className="bg-slate-50">
-                            <TableRow>
-                                <TableHead className="font-semibold text-slate-700">Employee Info</TableHead>
-                                <TableHead className="font-semibold text-slate-700">Calculated Gross</TableHead>
-                                <TableHead className="font-semibold text-slate-700">Leave Penalty</TableHead>
-                                <TableHead className="font-semibold text-slate-700">Net Payable</TableHead>
-                                <TableHead className="font-semibold text-slate-700">Status</TableHead>
-                                <TableHead className="text-right font-semibold text-slate-700">Action</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {loading ? <TableRow><TableCell colSpan={6} className="h-40 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow> :
-                            payrolls.length === 0 ? <TableRow><TableCell colSpan={6} className="h-40 text-center text-muted-foreground">No payroll generated for {monthsList.find(m => m.value === month)?.label} {year}.</TableCell></TableRow> :
-                            payrolls.map((p: any) => (
-                                <TableRow key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                                    <TableCell>
-                                        <div className="font-bold text-gray-900">{p.employees?.name}</div>
-                                        <div className="text-xs font-medium text-slate-500">{p.employees?.employee_code} • {p.employees?.department}</div>
-                                    </TableCell>
-                                    <TableCell className="font-medium text-gray-700">₹{p.gross_salary}</TableCell>
-                                    <TableCell className="text-red-500 font-medium">{p.leave_deduction > 0 ? `- ₹${p.leave_deduction}` : "—"}</TableCell>
-                                    <TableCell className="font-bold text-emerald-600 text-base">₹{p.net_salary}</TableCell>
-                                    <TableCell>
-                                        {p.payroll_status === 'processed' 
-                                            ? <Badge className="bg-amber-100 text-amber-700 border-none px-2.5 py-0.5 shadow-none hover:bg-amber-100">Draft / Pending</Badge> 
-                                            : <Badge className="bg-blue-100 text-blue-700 border-none px-2.5 py-0.5 shadow-none hover:bg-blue-100">Approved</Badge>}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <div className="flex justify-end gap-1.5">
-                                            {p.payroll_status === "processed" && (
-                                                <>
-                                                    {/* এডিট বাটন - ৩ দিনের লজিক অ্যাড করা হলো */}
-                                                    <Button 
-                                                        size="icon" 
-                                                        variant="ghost" 
-                                                        className="h-8 w-8 text-orange-500 hover:bg-orange-50 disabled:opacity-30 disabled:hover:bg-transparent" 
-                                                        onClick={() => openEdit(p)} 
-                                                        title={canEditPayroll(p.created_at) ? "Adjust Leaves" : "Edit time expired (3 days passed)"}
-                                                        disabled={!canEditPayroll(p.created_at)}
-                                                    >
-                                                        <Edit className="h-4 w-4" />
-                                                    </Button>
-                                                    <Button size="sm" variant="outline" className="h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50 shadow-sm" onClick={() => approvePayroll(p.id)}>
-                                                        <CheckCircle className="h-4 w-4 mr-1" /> Approve
-                                                    </Button>
-                                                </>
-                                            )}
-                                            
-                                            {/* ডাউনলোড স্লিপ বাটন - Approve না হওয়া পর্যন্ত disabled থাকবে */}
-                                            <Button 
-                                                size="sm" 
-                                                variant="secondary" 
-                                                className="h-8 bg-slate-100 hover:bg-slate-200 text-slate-700 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed" 
-                                                onClick={() => handleDownload(p)} 
-                                                title={p.payroll_status === "processed" ? "Approve the payroll first to download slip" : "Download Payslip PDF"}
-                                                disabled={p.payroll_status === "processed"} // 'processed' মানে পেন্ডিং, তাই disabled
-                                            >
-                                                <Download className="h-4 w-4 mr-1" /> Slip
-                                            </Button>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-            </Card>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-6">
+                <TabsList className="grid w-[400px] grid-cols-2">
+                    <TabsTrigger value="processing" className="font-semibold"><Zap className="h-4 w-4 mr-2" /> Payroll Processing</TabsTrigger>
+                    <TabsTrigger value="advances" className="font-semibold"><HandCoins className="h-4 w-4 mr-2" /> Salary Advances</TabsTrigger>
+                </TabsList>
 
+                {/* TAB 1: PAYROLL PROCESSING */}
+                <TabsContent value="processing" className="space-y-6">
+                    {/* Metrics */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full">
+                        <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4"><div className="p-3 bg-blue-50 rounded-lg text-blue-600"><Banknote className="h-5 w-5"/></div><div><p className="text-[10px] font-bold text-muted-foreground uppercase">Total Company CTC</p><h3 className="text-xl font-bold">₹{metrics.totalCTC.toLocaleString()}</h3></div></CardContent></Card>
+                        <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4"><div className="p-3 bg-red-50 rounded-lg text-red-600"><PieChart className="h-5 w-5"/></div><div><p className="text-[10px] font-bold text-muted-foreground uppercase">Total Deductions</p><h3 className="text-xl font-bold text-red-600">₹{metrics.totalDeduct.toLocaleString()}</h3></div></CardContent></Card>
+                        <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4"><div className="p-3 bg-emerald-50 rounded-lg text-emerald-600"><IndianRupee className="h-5 w-5"/></div><div><p className="text-[10px] font-bold text-muted-foreground uppercase">Total Net Payout</p><h3 className="text-xl font-bold text-emerald-600">₹{metrics.totalNet.toLocaleString()}</h3></div></CardContent></Card>
+                        <Card className="border-0 shadow-sm bg-white"><CardContent className="p-5 flex items-center gap-4"><div className="p-3 bg-amber-50 rounded-lg text-amber-600"><CheckCircle className="h-5 w-5"/></div><div><p className="text-[10px] font-bold text-muted-foreground uppercase">Pending Approvals</p><h3 className="text-xl font-bold">{metrics.pending} / {metrics.processed}</h3></div></CardContent></Card>
+                    </div>
+
+                    <div className="flex justify-end">
+                        <Button onClick={handleBulkRun} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-md">
+                            <Zap className="h-4 w-4 mr-2" /> Run Calculation for All
+                        </Button>
+                    </div>
+
+                    <Card className="border-0 shadow-sm rounded-xl overflow-hidden bg-white">
+                        <CardContent className="p-0">
+                            <Table>
+                                <TableHeader className="bg-slate-50">
+                                    <TableRow>
+                                        <TableHead className="font-semibold text-slate-700">Employee Info</TableHead>
+                                        <TableHead className="font-semibold text-slate-700">Gross</TableHead>
+                                        <TableHead className="font-semibold text-slate-700 text-rose-600">Leave Penalty</TableHead>
+                                        <TableHead className="font-semibold text-slate-700 text-rose-600">Advance Cut</TableHead>
+                                        <TableHead className="font-semibold text-slate-700 text-emerald-600">Net Payable</TableHead>
+                                        <TableHead className="font-semibold text-slate-700">Status</TableHead>
+                                        <TableHead className="text-right font-semibold text-slate-700">Action</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {payrollLoading ? <TableRow><TableCell colSpan={7} className="h-40 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow> :
+                                    payrolls.length === 0 ? <TableRow><TableCell colSpan={7} className="h-40 text-center text-muted-foreground">No payroll generated.</TableCell></TableRow> :
+                                    payrolls.map((p: any) => (
+                                        <TableRow key={p.id} className="hover:bg-slate-50/50">
+                                            <TableCell>
+                                                <div className="font-bold text-gray-900">{p.employees?.name}</div>
+                                                <div className="text-xs font-medium text-slate-500">{p.employees?.employee_code}</div>
+                                            </TableCell>
+                                            <TableCell className="font-medium text-gray-700">₹{p.gross_salary}</TableCell>
+                                            <TableCell className="text-red-500 font-medium">{p.leave_deduction > 0 ? `- ₹${p.leave_deduction}` : "—"}</TableCell>
+                                            <TableCell className="text-red-500 font-medium">{p.advance_deduction > 0 ? `- ₹${p.advance_deduction}` : "—"}</TableCell>
+                                            <TableCell className="font-bold text-emerald-600 text-base">₹{p.net_salary}</TableCell>
+                                            <TableCell>
+                                                {p.payroll_status === 'processed' 
+                                                    ? <Badge className="bg-amber-100 text-amber-700 border-none">Pending</Badge> 
+                                                    : <Badge className="bg-blue-100 text-blue-700 border-none">Approved</Badge>}
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <div className="flex justify-end gap-1.5">
+                                                    {p.payroll_status === "processed" && (
+                                                        <>
+                                                            <Button size="icon" variant="ghost" className="h-8 w-8 text-orange-500" onClick={() => openEdit(p)} disabled={!canEditPayroll(p.created_at)}><Edit className="h-4 w-4" /></Button>
+                                                            <Button size="sm" variant="outline" className="h-8 border-emerald-200 text-emerald-700" onClick={() => approvePayroll(p.id)}><CheckCircle className="h-4 w-4 mr-1" /> Approve</Button>
+                                                        </>
+                                                    )}
+                                                    <Button size="sm" variant="secondary" className="h-8" onClick={() => handleDownload(p)} disabled={p.payroll_status === "processed"}><Download className="h-4 w-4 mr-1" /> Slip</Button>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                {/* TAB 2: SALARY ADVANCES */}
+                <TabsContent value="advances" className="space-y-6">
+                    <div className="flex justify-between items-center bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+                        <div>
+                            <h3 className="font-bold text-indigo-900">Manage Salary Advances</h3>
+                            <p className="text-sm text-indigo-700">Approved advances will be auto-deducted from the targeted month's payroll.</p>
+                        </div>
+                        <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => setAdvanceModal(true)}>
+                            <HandCoins className="h-4 w-4 mr-2" /> Request Advance
+                        </Button>
+                    </div>
+
+                    <Card className="border-0 shadow-sm rounded-xl overflow-hidden bg-white">
+                        <CardContent className="p-0">
+                            <Table>
+                                <TableHeader className="bg-slate-50">
+                                    <TableRow>
+                                        <TableHead className="font-semibold text-slate-700">Employee</TableHead>
+                                        <TableHead className="font-semibold text-slate-700">Requested Amount</TableHead>
+                                        <TableHead className="font-semibold text-slate-700">Reason</TableHead>
+                                        <TableHead className="font-semibold text-slate-700">Target Deduction</TableHead>
+                                        <TableHead className="font-semibold text-slate-700">Status</TableHead>
+                                        <TableHead className="text-right font-semibold text-slate-700">Action</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {advLoading ? <TableRow><TableCell colSpan={6} className="h-40 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow> :
+                                    advances.length === 0 ? <TableRow><TableCell colSpan={6} className="h-40 text-center text-muted-foreground">No advance requests found.</TableCell></TableRow> :
+                                    advances.map((adv: any) => (
+                                        <TableRow key={adv.id}>
+                                            <TableCell className="font-bold">{adv.employees?.name} <span className="text-xs text-muted-foreground block">{adv.employees?.employee_code}</span></TableCell>
+                                            <TableCell className="font-bold text-orange-600">₹{adv.amount}</TableCell>
+                                            <TableCell className="text-sm text-slate-600 max-w-[200px] truncate">{adv.reason || "N/A"}</TableCell>
+                                            <TableCell className="font-medium">
+                                                <div>{monthsList.find(m => m.value === String(adv.target_month))?.label} {adv.target_year}</div>
+                                                {/* +++ MODIFIED: Show EMI/Full Deduct info +++ */}
+                                                <div className="text-xs text-muted-foreground mt-0.5">
+                                                    {adv.deduction_type === 'EMI' ? `EMI: ₹${adv.emi_amount}/mo` : 'Full Deduct'}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>
+                                                {adv.status === 'approved' && <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none">Approved</Badge>}
+                                                {adv.status === 'rejected' && <Badge className="bg-rose-100 text-rose-700 hover:bg-rose-100 border-none">Rejected</Badge>}
+                                                {adv.status === 'pending' && <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-none">Pending</Badge>}
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                {adv.status === 'pending' && (
+                                                    <div className="flex justify-end gap-2">
+                                                        <Button size="sm" variant="outline" className="h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={() => updateStatus(adv.id, "approved", Number(month), Number(year))}>
+                                                            <CheckCircle className="h-4 w-4 mr-1" /> Approve
+                                                        </Button>
+                                                        <Button size="sm" variant="outline" className="h-8 border-rose-200 text-rose-700 hover:bg-rose-50" onClick={() => updateStatus(adv.id, "rejected", Number(month), Number(year))}>
+                                                            <XCircle className="h-4 w-4 mr-1" /> Reject
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+            </Tabs>
+
+            {/* Advance Request Modal */}
+            <Dialog open={advanceModal} onOpenChange={setAdvanceModal}>
+                <DialogContent className="sm:max-w-[420px]">
+                    <DialogHeader>
+                        <DialogTitle>Request Salary Advance</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label>Select Employee</Label>
+                            <Select value={advanceForm.employee_id} onValueChange={(v) => setAdvanceForm({...advanceForm, employee_id: v})}>
+                                <SelectTrigger><SelectValue placeholder="Choose employee" /></SelectTrigger>
+                                <SelectContent>
+                                    {employees.filter((e: any) => e.status === 'active').map((e: any) => (
+                                        <SelectItem key={e.id} value={e.id}>{e.name} ({e.employee_code})</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Advance Amount (₹)</Label>
+                            <Input type="number" value={advanceForm.amount} onChange={e => setAdvanceForm({...advanceForm, amount: e.target.value})} placeholder="e.g. 5000" />
+                        </div>
+                        
+                        {/* +++ MODIFIED: New Deduction Method Fields +++ */}
+                        <div className="space-y-2">
+                            <Label>Deduction Method</Label>
+                            <Select value={advanceForm.deduction_type} onValueChange={(v) => setAdvanceForm({...advanceForm, deduction_type: v})}>
+                                <SelectTrigger><SelectValue placeholder="Select Method" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="FULL">Full Auto-Deduct</SelectItem>
+                                    <SelectItem value="EMI">Monthly EMI</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        {advanceForm.deduction_type === "EMI" && (
+                            <div className="space-y-2 animate-in fade-in zoom-in duration-200">
+                                <Label>Monthly EMI Amount (₹)</Label>
+                                <Input type="number" value={advanceForm.emi_amount} onChange={e => setAdvanceForm({...advanceForm, emi_amount: e.target.value})} placeholder="e.g. 1000" />
+                            </div>
+                        )}
+                        {/* +++ END MODIFIED +++ */}
+
+                        <div className="space-y-2">
+                            <Label>Reason for Advance</Label>
+                            <Textarea value={advanceForm.reason} onChange={e => setAdvanceForm({...advanceForm, reason: e.target.value})} placeholder="Briefly state the reason" className="resize-none" />
+                        </div>
+                        <div className="bg-blue-50 p-3 rounded text-sm text-blue-800 flex gap-2">
+                            <Zap className="h-4 w-4 shrink-0 mt-0.5" />
+                            <p>
+                                {/* Adjusted info message based on type */}
+                                {advanceForm.deduction_type === "EMI" 
+                                    ? `An EMI of ₹${advanceForm.emi_amount || 0} will be deducted monthly starting from ` 
+                                    : `This amount will be deducted automatically from the `}
+                                <b>{monthsList.find(m => m.value === month)?.label} {year}</b> payroll.
+                            </p>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setAdvanceModal(false)}>Cancel</Button>
+                        <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleAdvanceSubmit}>Submit Request</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Existing Edit Modal */}
             <Dialog open={editModal} onOpenChange={setEditModal}>
                 <DialogContent className="sm:max-w-[400px] rounded-xl overflow-hidden p-0">
                     <DialogHeader className="bg-slate-50 p-6 border-b">
@@ -270,15 +409,9 @@ export const PayrollTab = () => {
 
             <div className="hidden">
                 <div ref={printRef}>
-                    {printData && (
-                        <PayslipTemplate 
-                            payroll={printData} 
-                            employee={printData.employee} 
-                        />
-                    )}
+                    {printData && <PayslipTemplate payroll={printData} employee={printData.employee} />}
                 </div>
             </div>
-
         </div>
     );
 };
