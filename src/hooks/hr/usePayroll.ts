@@ -41,14 +41,17 @@ export const usePayroll = () => {
 
         const getStatus = (status: any) => (status || "").toLowerCase();
 
-        const presentDays = (attendance || []).filter((i: any) => getStatus(i.status) === "present" || getStatus(i.status) === "approved").length;
+        // Count explicit absence rather than purely present days to allow Sundays/Holidays to be paid
+        const absentLogs = (attendance || []).filter((i: any) => getStatus(i.status) === "absent").length;
+        const halfDays = (attendance || []).filter((i: any) => getStatus(i.status) === "half_day").length;
         const lateDays = (attendance || []).filter((i: any) => getStatus(i.status) === "late").length;
 
-        const TOTAL_WORKING_DAYS = 26;
-        let absentDays = TOTAL_WORKING_DAYS - presentDays;
-        if (absentDays < 0) absentDays = 0; 
+        // Calculate exact days in the specific month (28, 29, 30, or 31)
+        const TOTAL_WORKING_DAYS = new Date(payrollYear, payrollMonth, 0).getDate();
+        
+        const lopDays = calculateLopDays(absentLogs, halfDays, lateDays);
+        const presentDays = TOTAL_WORKING_DAYS - lopDays; // Month's total days minus the days explicitly missed
 
-        const lopDays = calculateLopDays(absentDays, 0, lateDays);
         const grossSalary = Number(salary.gross_salary || 0);
         const perDaySalary = calculatePerDaySalary(grossSalary, TOTAL_WORKING_DAYS);
         const leaveDeduction = calculateLeaveDeduction(perDaySalary, lopDays);
@@ -56,16 +59,15 @@ export const usePayroll = () => {
         let totalDeductions = Number(salary.total_deductions || 0) + leaveDeduction;
         let finalSalaryBeforeAdvance = grossSalary - totalDeductions;
 
-        // Fetch Advance using 'approved' status (because PayrollTab sets it to 'approved' when accepted)
+        // Fetch Advance
         const { data: advanceRawData } = await supabase
             .from("salary_advances" as any)
             .select("*")
             .eq("employee_id", employeeId)
-            .eq("status", "approved") // <--- FIXED STATUS
+            .eq("status", "approved") 
             .gt("remaining_amount", 0)
             .maybeSingle();
 
-        // Casting properly to avoid TS Errors
         const activeAdvance = advanceRawData as any as { 
             id: string; 
             remaining_amount: number; 
@@ -110,7 +112,6 @@ export const usePayroll = () => {
         const { error: insertError } = await supabase.from("employee_payrolls" as any).insert(payload as any);
         if (insertError) return { success: false, error: insertError.message };
 
-        // Update remaining balance and change status to 'completed' if paid off
         if (advanceDeductionThisMonth > 0 && activeAdvance && activeAdvance.id) {
             const newRemaining = Number(activeAdvance.remaining_amount) - advanceDeductionThisMonth;
             
@@ -147,7 +148,6 @@ export const usePayroll = () => {
             setLoading(true);
             let successCount = 0; let failCount = 0;
 
-            // Updated Bulk Generation Loop to properly fetch and process advance deductions
             for (const emp of employees) {
                 const result = await _processPayrollCore(emp.id, payrollMonth, payrollYear);
                 if (result.success) {
@@ -190,7 +190,7 @@ export const usePayroll = () => {
     };
 
     const markPayrollPaid = async (payrollId: string) => {
-        const { error } = await supabase.from("employee_payrolls" as any).update({ payroll_status: "paid", paid_at: new Date().toISOString() }).eq("id", payrollId);
+        const { error } = await supabase.from("employee_payrolls" as any).update({ payroll_status: "paid" }).eq("id", payrollId);
         if (!error) { toast.success("Marked Paid"); return true; }
         return false;
     };
