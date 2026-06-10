@@ -1,98 +1,163 @@
+// src/components/hr/PayslipTemplate.tsx
 import React from "react";
+import { format } from "date-fns";
 
 interface PayslipProps {
-  employee: any; 
-  payroll: any;
+    payroll: any;
+    employee: any;
 }
 
-export const PayslipTemplate: React.FC<PayslipProps> = ({ employee, payroll }) => {
-  return (
-    <div id="printable-payslip" className="bg-white p-8 w-full max-w-4xl mx-auto text-black font-sans text-sm">
-      
-      <div className="border-2 border-black">
-        {/* Header */}
-        <div className="text-center border-b-2 border-black p-4">
-          <h1 className="text-2xl font-bold uppercase tracking-wide">Phoenix Real Estate</h1>
-          <p className="text-xs mt-1">123 Business Avenue, Kolkata, West Bengal - 700001</p>
-          <h2 className="text-lg font-bold mt-3 underline uppercase">
-            Payslip for the month of {payroll?.month || "June"} {payroll?.year || "2026"}
-          </h2>
-        </div>
+export const PayslipTemplate: React.FC<PayslipProps> = ({ payroll, employee }) => {
+    if (!payroll || !employee) return null;
 
-        {/* Employee Details */}
-        <div className="grid grid-cols-2 border-b-2 border-black">
-          <div className="border-r-2 border-black p-3 space-y-2">
-            <div className="flex"><span className="w-32 font-bold">Employee Name</span><span>: {employee?.name || "Sayani Dutta"}</span></div>
-            <div className="flex"><span className="w-32 font-bold">Employee ID</span><span>: {employee?.employee_code || "PR26H-003"}</span></div>
-            <div className="flex"><span className="w-32 font-bold">Designation</span><span>: {employee?.designation || "HR"}</span></div>
-          </div>
-          <div className="p-3 space-y-2">
-            <div className="flex"><span className="w-32 font-bold">Total Days</span><span>: {payroll?.working_days || 26}</span></div>
-            <div className="flex"><span className="w-32 font-bold">Paid Days</span><span>: {payroll?.present_days || 26}</span></div>
-            <div className="flex"><span className="w-32 font-bold">LOP Days</span><span>: {payroll?.lop_days || 0}</span></div>
-          </div>
-        </div>
+    // Helper to format currency exactly as shown (with dashes for zero)
+    const formatCurrency = (amount: number | string) => {
+        const value = Number(amount) || 0;
+        if (value === 0) return "-";
+        return value.toLocaleString("en-IN", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        });
+    };
 
-        {/* Earnings & Deductions Table */}
-        <div className="flex border-b-2 border-black min-h-[250px]">
-          {/* Earnings */}
-          <div className="w-1/2 border-r-2 border-black flex flex-col">
-            <div className="flex justify-between border-b-2 border-black p-2 font-bold bg-gray-100">
-              <span>Earnings</span><span>Amount (₹)</span>
-            </div>
-            <div className="p-2 space-y-2 flex-grow">
-              <div className="flex justify-between"><span>Basic Salary</span><span>{payroll?.basic || 0}</span></div>
-              <div className="flex justify-between"><span>House Rent Allowance</span><span>{payroll?.hra || 0}</span></div>
-            </div>
-          </div>
+    const monthName = new Date(payroll.payroll_year, payroll.payroll_month - 1).toLocaleString("default", { month: "long" });
+    const year = payroll.payroll_year;
+    
+    const basic = Number(payroll.basic || 0);
+    const hra = Number(payroll.hra || 0);
+    const conveyance = Number(payroll.gross_salary) - basic - hra > 0 ? Number(payroll.gross_salary) - basic - hra : 0; 
+    
+    const advanceDeduction = Number(payroll.advance_deduction || 0);
+    const otherDeductions = Number(payroll.leave_deduction || 0) + Number(payroll.pf_deduction || 0) + Number(payroll.esi_deduction || 0);
+    const totalDeductions = Number(payroll.total_deductions || 0);
+    const grossSalary = Number(payroll.gross_salary || 0);
+    const netSalary = Number(payroll.net_salary || 0);
 
-          {/* Deductions */}
-          <div className="w-1/2 flex flex-col">
-            <div className="flex justify-between border-b-2 border-black p-2 font-bold bg-gray-100">
-              <span>Deductions</span><span>Amount (₹)</span>
-            </div>
-            <div className="p-2 space-y-2 flex-grow">
-              <div className="flex justify-between"><span>Provident Fund (PF)</span><span>{payroll?.pf_deduction || 0}</span></div>
-              <div className="flex justify-between"><span>ESI</span><span>{payroll?.esi_deduction || 0}</span></div>
-              <div className="flex justify-between text-red-600"><span>Leave Penalty / LOP</span><span>{payroll?.leave_deduction || 0}</span></div>
-              
-              {/* +++ UPDATED: Advance Deduction Row +++ */}
-              {Number(payroll?.advance_deduction || 0) > 0 && (
-                <div className="flex justify-between text-orange-600 font-medium">
-                  <span>Advance Deduction</span>
-                  <span>- {payroll?.advance_deduction}</span>
+    return (
+        <div className="w-full max-w-[900px] mx-auto bg-white p-12 text-black font-serif" style={{ fontFamily: "'Times New Roman', Times, serif", printColorAdjust: "exact", WebkitPrintColorAdjust: "exact" }}>
+            
+            {/* Header Section */}
+            <div className="flex justify-between items-start mb-10">
+                <div className="pt-2">
+                    <h1 className="text-[28px] tracking-tight">
+                        <span className="text-[#c44a88]">Phoenix </span>
+                        <span className="text-[#ea82b8]">Realesthatic</span>
+                    </h1>
+                    <p className="text-[9px] text-[#ea82b8] tracking-[0.15em] text-center mt-0.5 ml-4">Turning Properties into Prosperities</p>
                 </div>
-              )}
+                <div className="text-[14px] mt-6 flex items-center">
+                    <span>Pay Slip for the month of :</span>
+                    <span className="ml-4 w-20">{monthName},</span>
+                    <span className="ml-2">{year}</span>
+                </div>
             </div>
-          </div>
-        </div>
 
-        {/* Totals */}
-        <div className="flex border-b-2 border-black">
-          <div className="w-1/2 border-r-2 border-black p-2 flex justify-between font-bold">
-            <span>Gross Earnings</span><span>₹ {payroll?.gross_salary || 0}</span>
-          </div>
-          <div className="w-1/2 p-2 flex justify-between font-bold">
-            <span>Total Deductions</span><span>₹ {payroll?.total_deductions || 0}</span>
-          </div>
-        </div>
+            {/* Company Info */}
+            <div className="text-center mb-12 text-[14px] leading-tight">
+                <h2 className="font-bold mb-1">Phoenix Realesthatic</h2>
+                <p className="font-bold">Regus, Globsyn Crystals, Street Number 17, EP Block, Sector V, Bidhannagar,</p>
+                <p className="font-bold">Kolkata - 700091</p>
+            </div>
 
-        {/* Net Salary Payable */}
-        <div className="p-4 flex justify-between items-center text-lg font-bold bg-gray-100">
-          <span>NET SALARY PAYABLE</span>
-          <span className="text-xl">₹ {payroll?.net_salary || 0}</span>
-        </div>
-      </div>
+            {/* Employee Details */}
+            <div className="grid grid-cols-2 gap-x-12 mb-14 text-[13px] leading-relaxed">
+                {/* Left Column */}
+                <div className="space-y-1">
+                    <div className="grid grid-cols-[140px_20px_1fr]">
+                        <span>Employee Name</span><span>:</span><span>{employee.name || "N/A"}</span>
+                    </div>
+                    <div className="grid grid-cols-[140px_20px_1fr]">
+                        <span>Employee Code</span><span>:</span><span>{employee.employee_code || "N/A"}</span>
+                    </div>
+                    <div className="grid grid-cols-[140px_20px_1fr]">
+                        <span>Date Of Joining</span><span>:</span><span>{employee.doj ? format(new Date(employee.doj), "dd.MM.yyyy") : "N/A"}</span>
+                    </div>
+                    <div className="grid grid-cols-[140px_20px_1fr]">
+                        <span>Designation</span><span>:</span><span>{employee.designation || "N/A"}</span>
+                    </div>
+                    <div className="grid grid-cols-[140px_20px_1fr]">
+                        <span>Department</span><span>:</span><span>{employee.department || "N/A"}</span>
+                    </div>
+                    <div className="grid grid-cols-[140px_20px_1fr]">
+                        <span>Location</span><span>:</span><span>Kolkata</span>
+                    </div>
+                </div>
 
-      {/* Signatures */}
-      <div className="mt-20 flex justify-between px-10">
-        <div className="text-center border-t border-black w-48 pt-2">Authorized Signatory</div>
-        <div className="text-center border-t border-black w-48 pt-2">Employee Signature</div>
-      </div>
-      
-      <p className="text-center text-xs mt-8 italic text-gray-500">
-        This is a computer-generated document. No signature is required.
-      </p>
-    </div>
-  );
+                {/* Right Column */}
+                <div className="space-y-1 pl-4">
+                    <div className="grid grid-cols-[140px_20px_1fr]">
+                        <span>Pay Mode</span><span>:</span><span>RTGS/NEFT</span>
+                    </div>
+                    <div className="grid grid-cols-[140px_20px_1fr]">
+                        <span>Bank Name</span><span>:</span><span>{employee.bank_name || "N/A"}</span>
+                    </div>
+                    <div className="grid grid-cols-[140px_20px_1fr]">
+                        <span>Bank A/C No</span><span>:</span><span>{employee.bank_account_no || "N/A"}</span>
+                    </div>
+                    <div className="grid grid-cols-[140px_20px_1fr]">
+                        <span>Pan No</span><span>:</span><span>{employee.pan_no || "N/A"}</span>
+                    </div>
+                    <div className="grid grid-cols-[140px_20px_1fr]">
+                        <span>Absent Days</span><span>:</span><span>{payroll.lop_days || 0}</span>
+                    </div>
+                    <div className="grid grid-cols-[140px_20px_1fr]">
+                        <span>Worked Days</span><span>:</span><span>{payroll.present_days || 0}</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Earnings & Deductions Details */}
+            <div className="grid grid-cols-2 gap-x-12 text-[13px]">
+                {/* Earnings Column */}
+                <div className="grid grid-cols-[200px_20px_1fr] gap-y-2">
+                    <div className="font-bold">Earnings</div>
+                    <div className="font-bold text-center">:</div>
+                    <div className="font-bold text-right pr-6">Amount (INR)</div>
+
+                    <div>Earned Basic</div><div className="text-center">:</div><div className="text-right pr-6">{formatCurrency(basic)}</div>
+                    <div>Earned HRA</div><div className="text-center">:</div><div className="text-right pr-6">{formatCurrency(hra)}</div>
+                    <div>Earned Conveyance</div><div className="text-center">:</div><div className="text-right pr-6">{formatCurrency(conveyance)}</div>
+                    <div>Earned Personal Pay</div><div className="text-center">:</div><div className="text-right pr-6">-</div>
+                    <div>Earned Special Allowance</div><div className="text-center">:</div><div className="text-right pr-6">-</div>
+                    <div>Travel Allowance</div><div className="text-center">:</div><div className="text-right pr-6">-</div>
+                    <div>Loyality Bonus / Annual (Variable)</div><div className="text-center">:</div><div className="text-right pr-6">-</div>
+                    <div>Arrear Salary</div><div className="text-center">:</div><div className="text-right pr-6">-</div>
+                    <div>Others</div><div className="text-center">:</div><div className="text-right pr-6">-</div>
+                </div>
+
+                {/* Deductions Column */}
+                <div className="grid grid-cols-[180px_20px_1fr] gap-y-2 pl-4">
+                    <div className="font-bold">Deductions</div>
+                    <div></div>
+                    <div className="font-bold text-right pr-12">Amount (INR)</div>
+
+                    <div>Professional Tax</div><div className="text-center">:</div><div className="text-right pr-12">Nil</div>
+                    <div>Advance</div><div className="text-center">:</div><div className="text-right pr-12">{advanceDeduction > 0 ? formatCurrency(advanceDeduction) : "N/A"}</div>
+                    <div>Other Deductions</div><div className="text-center">:</div><div className="text-right pr-12">{otherDeductions > 0 ? formatCurrency(otherDeductions) : "N/A"}</div>
+                </div>
+            </div>
+
+            {/* Totals Section */}
+            <div className="mt-12 text-[13px] grid grid-cols-2 gap-x-12">
+                <div className="grid grid-cols-[200px_1fr]">
+                    <div className="font-normal">Total Earnings (INR)</div>
+                    <div className="text-right pr-6">{formatCurrency(grossSalary)}</div>
+                </div>
+                <div className="grid grid-cols-[200px_1fr] pl-4">
+                    <div className="font-normal">Total Deductions (INR)</div>
+                    <div className="text-right pr-12">{totalDeductions > 0 ? formatCurrency(totalDeductions) : "-"}</div>
+                </div>
+            </div>
+
+            {/* Net Pay Section */}
+            <div className="mt-2 text-[13px] grid grid-cols-2 gap-x-12">
+                <div className="grid grid-cols-[200px_1fr]">
+                    <div className="font-bold">Net Pay (INR)</div>
+                    <div className="font-normal text-right pr-6">{formatCurrency(netSalary)}</div>
+                </div>
+                <div></div>
+            </div>
+
+        </div>
+    );
 };
