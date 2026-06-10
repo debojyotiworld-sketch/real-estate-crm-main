@@ -51,7 +51,6 @@ export const calculateLeaveDeduction = (
     return perDaySalary * lopDays;
 };
 
-// +++ NOTUN CODE: Advance Deduction Logic +++
 export const calculateAdvanceDeduction = (
     remainingAdvance: number,
     deductionType: 'FULL' | 'EMI',
@@ -63,13 +62,10 @@ export const calculateAdvanceDeduction = (
     let deductionThisMonth = 0;
 
     if (deductionType === 'EMI' && emiAmount > 0) {
-        // EMI hole emi amount ba remaining advance (jeta choto) seta katbe
         deductionThisMonth = Math.min(emiAmount, remainingAdvance);
     } else {
-        // FULL hole pura baki taka katbe, kintu salary er theke besi katte parbe na
         deductionThisMonth = Math.min(remainingAdvance, availableNetSalary);
     }
 
-    // Ekebare net salary er theke besi katan jabe na
     return Math.min(deductionThisMonth, availableNetSalary);
 };

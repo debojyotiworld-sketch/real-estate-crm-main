@@ -9,17 +9,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePayroll } from "@/hooks/hr/usePayroll";
 import { useEmployees } from "@/hooks/hr/useEmployees";
 import { useAdvances } from "@/hooks/hr/useAdvances";
-import { CheckCircle, Download, Loader2, Edit, Zap, IndianRupee, PieChart, Banknote, ChevronLeft, ChevronRight, HandCoins, XCircle } from "lucide-react";
+// +++ Added CreditCard icon +++
+import { CheckCircle, Download, Loader2, Edit, Zap, IndianRupee, PieChart, Banknote, ChevronLeft, ChevronRight, HandCoins, XCircle, CreditCard } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useReactToPrint } from "react-to-print";
 import { PayslipTemplate } from "./PayslipTemplate";
-import { toast } from "sonner"; // Added for validation error messages
+import { toast } from "sonner";
 
 export const PayrollTab = () => {
-    const { payrolls, loading: payrollLoading, fetchPayrolls, generateBulkPayroll, updatePayroll, approvePayroll } = usePayroll();
+    const { payrolls, loading: payrollLoading, fetchPayrolls, generateBulkPayroll, updatePayroll, approvePayroll, markPayrollPaid } = usePayroll();
     const { employees } = useEmployees();
     const { advances, loading: advLoading, fetchAdvances, requestAdvance, updateStatus } = useAdvances();
     
@@ -32,6 +33,11 @@ export const PayrollTab = () => {
     const [editModal, setEditModal] = useState(false);
     const [advanceModal, setAdvanceModal] = useState(false);
     
+    // +++ NEW: Payment Modal State +++
+    const [paymentModal, setPaymentModal] = useState(false);
+    const [paymentDetails, setPaymentDetails] = useState({ mode: "Bank Transfer", reference: "", notes: "" });
+    // +++ END +++
+
     const [selectedPayroll, setSelectedPayroll] = useState<any>(null);
     const [adjustments, setAdjustments] = useState({ leave_deduction: 0, net_salary: 0 });
 
@@ -102,6 +108,32 @@ export const PayrollTab = () => {
         if (success) { setEditModal(false); fetchPayrolls(undefined, Number(month), Number(year)); }
     };
 
+    // +++ NEW: Open Payment Modal +++
+    const openPayment = (payroll: any) => {
+        setSelectedPayroll(payroll);
+        setPaymentDetails({ mode: "Bank Transfer", reference: "", notes: "" });
+        setPaymentModal(true);
+    };
+
+    // +++ NEW: Process Final Payment +++
+    const handleProcessPayment = async () => {
+        if (!selectedPayroll) return;
+        
+        let remarks = `Paid via ${paymentDetails.mode}.`;
+        if (paymentDetails.reference) remarks += ` Ref: ${paymentDetails.reference}.`;
+        if (paymentDetails.notes) remarks += ` Note: ${paymentDetails.notes}.`;
+
+        // Update the database with payment mode/reference in the remarks column
+        await updatePayroll(selectedPayroll.id, { remarks });
+        
+        // Mark as paid
+        const success = await markPayrollPaid(selectedPayroll.id);
+        if (success) {
+            setPaymentModal(false);
+            fetchPayrolls(undefined, Number(month), Number(year));
+        }
+    };
+
     const handleAdvanceSubmit = async () => {
         if (!advanceForm.employee_id || !advanceForm.amount) return;
 
@@ -118,8 +150,8 @@ export const PayrollTab = () => {
             reason: advanceForm.reason,
             deduction_type: advanceForm.deduction_type,
             emi_amount: advanceForm.deduction_type === "EMI" ? Number(advanceForm.emi_amount) : 0,
-            remaining_amount: Number(advanceForm.amount) // Keeping remaining_amount synced initially
-        });
+            remaining_amount: Number(advanceForm.amount)
+        } as any);
 
         if (success) {
             setAdvanceModal(false);
@@ -224,9 +256,10 @@ export const PayrollTab = () => {
                                             <TableCell className="text-red-500 font-medium">{p.advance_deduction > 0 ? `- ₹${p.advance_deduction}` : "—"}</TableCell>
                                             <TableCell className="font-bold text-emerald-600 text-base">₹{p.net_salary}</TableCell>
                                             <TableCell>
-                                                {p.payroll_status === 'processed' 
-                                                    ? <Badge className="bg-amber-100 text-amber-700 border-none">Pending</Badge> 
-                                                    : <Badge className="bg-blue-100 text-blue-700 border-none">Approved</Badge>}
+                                                {/* +++ UPDATED STATUS BADGES +++ */}
+                                                {p.payroll_status === 'processed' && <Badge className="bg-amber-100 text-amber-700 border-none">Pending</Badge>}
+                                                {p.payroll_status === 'approved' && <Badge className="bg-blue-100 text-blue-700 border-none">Approved</Badge>}
+                                                {p.payroll_status === 'paid' && <Badge className="bg-emerald-100 text-emerald-700 border-none">Paid</Badge>}
                                             </TableCell>
                                             <TableCell className="text-right">
                                                 <div className="flex justify-end gap-1.5">
@@ -236,6 +269,14 @@ export const PayrollTab = () => {
                                                             <Button size="sm" variant="outline" className="h-8 border-emerald-200 text-emerald-700" onClick={() => approvePayroll(p.id)}><CheckCircle className="h-4 w-4 mr-1" /> Approve</Button>
                                                         </>
                                                     )}
+                                                    
+                                                    {/* +++ NEW: 'Pay' Button shows up when approved +++ */}
+                                                    {p.payroll_status === "approved" && (
+                                                        <Button size="sm" variant="outline" className="h-8 border-blue-200 text-blue-700 hover:bg-blue-50" onClick={() => openPayment(p)}>
+                                                            <CreditCard className="h-4 w-4 mr-1" /> Pay
+                                                        </Button>
+                                                    )}
+                                                    
                                                     <Button size="sm" variant="secondary" className="h-8" onClick={() => handleDownload(p)} disabled={p.payroll_status === "processed"}><Download className="h-4 w-4 mr-1" /> Slip</Button>
                                                 </div>
                                             </TableCell>
@@ -282,7 +323,6 @@ export const PayrollTab = () => {
                                             <TableCell className="text-sm text-slate-600 max-w-[200px] truncate">{adv.reason || "N/A"}</TableCell>
                                             <TableCell className="font-medium">
                                                 <div>{monthsList.find(m => m.value === String(adv.target_month))?.label} {adv.target_year}</div>
-                                                {/* +++ MODIFIED: Show EMI/Full Deduct info +++ */}
                                                 <div className="text-xs text-muted-foreground mt-0.5">
                                                     {adv.deduction_type === 'EMI' ? `EMI: ₹${adv.emi_amount}/mo` : 'Full Deduct'}
                                                 </div>
@@ -313,6 +353,65 @@ export const PayrollTab = () => {
                 </TabsContent>
             </Tabs>
 
+            {/* +++ NEW: Salary Payment processing Modal +++ */}
+            <Dialog open={paymentModal} onOpenChange={setPaymentModal}>
+                <DialogContent className="sm:max-w-[420px]">
+                    <DialogHeader>
+                        <DialogTitle>Process Salary Payment</DialogTitle>
+                        <p className="text-sm text-muted-foreground">Record payout for {selectedPayroll?.employees?.name}</p>
+                    </DialogHeader>
+                    
+                    <div className="space-y-5 py-4">
+                        {/* Highlighted Payable Amount */}
+                        <div className="bg-emerald-50 p-4 rounded-lg flex justify-between items-center border border-emerald-100">
+                            <span className="text-emerald-800 font-medium">Net Payable</span>
+                            <span className="text-2xl font-bold text-emerald-700">₹{selectedPayroll?.net_salary}</span>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Payment Mode</Label>
+                            <Select value={paymentDetails.mode} onValueChange={(v) => setPaymentDetails({...paymentDetails, mode: v})}>
+                                <SelectTrigger><SelectValue placeholder="Select Mode" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="Bank Transfer">Bank Transfer (NEFT/RTGS/IMPS)</SelectItem>
+                                    <SelectItem value="UPI">UPI / Mobile Wallet</SelectItem>
+                                    <SelectItem value="Cheque">Cheque</SelectItem>
+                                    <SelectItem value="Cash">Cash</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        {paymentDetails.mode !== "Cash" && (
+                            <div className="space-y-2 animate-in fade-in zoom-in duration-200">
+                                <Label>Reference / Transaction ID</Label>
+                                <Input 
+                                    placeholder="e.g. UTR / UPI Ref / Cheque No." 
+                                    value={paymentDetails.reference} 
+                                    onChange={(e) => setPaymentDetails({...paymentDetails, reference: e.target.value})} 
+                                />
+                            </div>
+                        )}
+
+                        <div className="space-y-2">
+                            <Label>Internal Notes (Optional)</Label>
+                            <Input 
+                                placeholder="Any additional remarks..." 
+                                value={paymentDetails.notes} 
+                                onChange={(e) => setPaymentDetails({...paymentDetails, notes: e.target.value})} 
+                            />
+                        </div>
+                    </div>
+                    
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setPaymentModal(false)}>Cancel</Button>
+                        <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleProcessPayment}>
+                            Confirm Payment
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+            {/* +++ END +++ */}
+
             {/* Advance Request Modal */}
             <Dialog open={advanceModal} onOpenChange={setAdvanceModal}>
                 <DialogContent className="sm:max-w-[420px]">
@@ -336,7 +435,6 @@ export const PayrollTab = () => {
                             <Input type="number" value={advanceForm.amount} onChange={e => setAdvanceForm({...advanceForm, amount: e.target.value})} placeholder="e.g. 5000" />
                         </div>
                         
-                        {/* +++ MODIFIED: New Deduction Method Fields +++ */}
                         <div className="space-y-2">
                             <Label>Deduction Method</Label>
                             <Select value={advanceForm.deduction_type} onValueChange={(v) => setAdvanceForm({...advanceForm, deduction_type: v})}>
@@ -354,7 +452,6 @@ export const PayrollTab = () => {
                                 <Input type="number" value={advanceForm.emi_amount} onChange={e => setAdvanceForm({...advanceForm, emi_amount: e.target.value})} placeholder="e.g. 1000" />
                             </div>
                         )}
-                        {/* +++ END MODIFIED +++ */}
 
                         <div className="space-y-2">
                             <Label>Reason for Advance</Label>
@@ -363,7 +460,6 @@ export const PayrollTab = () => {
                         <div className="bg-blue-50 p-3 rounded text-sm text-blue-800 flex gap-2">
                             <Zap className="h-4 w-4 shrink-0 mt-0.5" />
                             <p>
-                                {/* Adjusted info message based on type */}
                                 {advanceForm.deduction_type === "EMI" 
                                     ? `An EMI of ₹${advanceForm.emi_amount || 0} will be deducted monthly starting from ` 
                                     : `This amount will be deducted automatically from the `}

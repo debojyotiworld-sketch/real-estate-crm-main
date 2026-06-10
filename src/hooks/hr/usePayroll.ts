@@ -1,7 +1,7 @@
+// src/hooks/hr/usePayroll.ts
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-// Import the new calculateAdvanceDeduction function
 import { getMonthDateRange, calculatePerDaySalary, calculateLopDays, calculateLeaveDeduction, calculateAdvanceDeduction } from "@/lib/payroll-utils";
 
 export const usePayroll = () => {
@@ -56,12 +56,22 @@ export const usePayroll = () => {
         let totalDeductions = Number(salary.total_deductions || 0) + leaveDeduction;
         let finalSalaryBeforeAdvance = grossSalary - totalDeductions;
 
-        const { data: activeAdvance } = await supabase
+        // Fetch Advance using 'approved' status (because PayrollTab sets it to 'approved' when accepted)
+        const { data: advanceRawData } = await supabase
             .from("salary_advances" as any)
             .select("*")
             .eq("employee_id", employeeId)
+            .eq("status", "approved") // <--- FIXED STATUS
             .gt("remaining_amount", 0)
             .maybeSingle();
+
+        // Casting properly to avoid TS Errors
+        const activeAdvance = advanceRawData as any as { 
+            id: string; 
+            remaining_amount: number; 
+            deduction_type: 'FULL' | 'EMI'; 
+            emi_amount: number; 
+        } | null;
 
         let advanceDeductionThisMonth = 0;
 
@@ -91,7 +101,7 @@ export const usePayroll = () => {
             pf_deduction: Number(salary.pf_employee_contribution || 0),
             esi_deduction: Number(salary.esi_employee_contribution || 0),
             leave_deduction: leaveDeduction,
-            advance_deduction: advanceDeductionThisMonth, // <--- Make sure this column is in your DB
+            advance_deduction: advanceDeductionThisMonth,
             total_deductions: totalDeductions,
             net_salary: finalSalary > 0 ? finalSalary : 0,
             payroll_status: "processed"
@@ -100,14 +110,15 @@ export const usePayroll = () => {
         const { error: insertError } = await supabase.from("employee_payrolls" as any).insert(payload as any);
         if (insertError) return { success: false, error: insertError.message };
 
-        if (advanceDeductionThisMonth > 0 && activeAdvance) {
+        // Update remaining balance and change status to 'completed' if paid off
+        if (advanceDeductionThisMonth > 0 && activeAdvance && activeAdvance.id) {
             const newRemaining = Number(activeAdvance.remaining_amount) - advanceDeductionThisMonth;
             
             await supabase
                 .from("salary_advances" as any)
                 .update({ 
                     remaining_amount: newRemaining,
-                    status: newRemaining <= 0 ? 'COMPLETED' : 'ACTIVE' // Update status when fully paid
+                    status: newRemaining <= 0 ? 'completed' : 'approved' 
                 })
                 .eq("id", activeAdvance.id);
         }
@@ -132,33 +143,33 @@ export const usePayroll = () => {
     };
 
     const generateBulkPayroll = async (employees: any[], payrollMonth: number, payrollYear: number) => {
-    try {
-        setLoading(true);
-        let successCount = 0; let failCount = 0;
+        try {
+            setLoading(true);
+            let successCount = 0; let failCount = 0;
 
-        for (const emp of employees) {
-            const result = await _processPayrollCore(emp.id, payrollMonth, payrollYear);
-            
-            if (result.success) {
-                successCount++;
-            } else {
-                console.error(`Failed for ${emp.name}:`, result.error);
-                failCount++;
+            // Updated Bulk Generation Loop to properly fetch and process advance deductions
+            for (const emp of employees) {
+                const result = await _processPayrollCore(emp.id, payrollMonth, payrollYear);
+                if (result.success) {
+                    successCount++;
+                } else {
+                    console.error(`Failed for ${emp.name}:`, result.error);
+                    failCount++;
+                }
             }
+
+            if (successCount > 0) toast.success(`Generated payroll for ${successCount} employees.`);
+            if (failCount > 0) toast.warning(`Skipped ${failCount} employees (already generated or missing setup).`);
+
+            await fetchPayrolls(undefined, payrollMonth, payrollYear);
+            return true;
+        } catch (err) {
+            toast.error("Bulk payroll failed");
+            return false;
+        } finally {
+            setLoading(false);
         }
-
-        if (successCount > 0) toast.success(`Generated payroll for ${successCount} employees.`);
-        if (failCount > 0) toast.warning(`Skipped ${failCount} employees.`);
-
-        await fetchPayrolls(undefined, payrollMonth, payrollYear);
-        return true;
-    } catch (err) {
-        toast.error("Bulk payroll failed");
-        return false;
-    } finally {
-        setLoading(false);
-    }
-};
+    };
 
     const updatePayroll = async (payrollId: string, updates: any) => {
         try {
